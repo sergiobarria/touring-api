@@ -1,0 +1,35 @@
+{
+	"name": "touric-rest-api",
+	"version": "1.0.0",
+	"description": "",
+	"main": "server.js",
+	"scripts": {
+		"build": "rimraf ./dist && tsc --project tsconfig.json && tsc-alias -p tsconfig.json",
+		"dev": "tsx watch ./src/server.ts",
+		"format": "pnpm biome format ./src --write",
+		"lint": "pnpm biome check ./src --apply",
+		"check": "pnpm tsc --noEmit",
+		"start": "node dist/server.js"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"dependencies": {
+		"dotenv": "^16.4.5",
+		"envalid": "^8.0.0",
+		"express": "^4.19.2",
+		"morgan": "^1.10.0",
+		"winston": "^3.13.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "1.6.3",
+		"@tsconfig/node20": "^20.1.4",
+		"@types/express": "^4.17.21",
+		"@types/morgan": "^1.9.9",
+		"@types/node": "^20.12.2",
+		"rimraf": "^5.0.5",
+		"tsc-alias": "^1.8.8",
+		"tsx": "^4.7.1",
+		"typescript": "^5.4.3"
+	}
+}
