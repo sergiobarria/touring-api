@@ -6,4 +6,5 @@ dotenv.config()
 export const env = cleanEnv(process.env, {
 	NODE_ENV: str({ choices: ['development', 'production'] }),
 	PORT: port(),
+	APP_VERSION: str(),
 })
