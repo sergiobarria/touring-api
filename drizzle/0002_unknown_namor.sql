@@ -1,0 +1,2 @@
+ALTER TABLE "touric_dev_tours" ALTER COLUMN "created_at" SET DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'UTC';--> statement-breakpoint
+ALTER TABLE "touric_dev_tours" ALTER COLUMN "updated_at" SET DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'UTC';

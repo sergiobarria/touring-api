@@ -15,13 +15,13 @@
 		"formatWithErrors": false,
 		"indentStyle": "tab",
 		"indentWidth": 4,
-		"lineWidth": 100,
+		"lineWidth": 120,
 		"lineEnding": "lf"
 	},
 	"javascript": {
 		"formatter": {
 			"arrowParentheses": "asNeeded",
-			"semicolons": "asNeeded",
+			"semicolons": "always",
 			"quoteStyle": "single",
 			"trailingComma": "es5",
 			"bracketSpacing": true,
