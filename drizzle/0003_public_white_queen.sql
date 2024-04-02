@@ -1,1 +1,0 @@
-ALTER TABLE "touric_dev_tours" ALTER COLUMN "rating_avg" SET DEFAULT 0;

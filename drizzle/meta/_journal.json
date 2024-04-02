@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "5",
-      "when": 1711911613153,
-      "tag": "0000_fast_robin_chapel",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "5",
-      "when": 1711914655253,
-      "tag": "0001_cheerful_shard",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "5",
-      "when": 1711914792897,
-      "tag": "0002_unknown_namor",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "5",
-      "when": 1711917229535,
-      "tag": "0003_public_white_queen",
+      "when": 1711941785789,
+      "tag": "0000_lush_exiles",
       "breakpoints": true
     }
   ]
