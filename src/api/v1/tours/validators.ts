@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createInsertSchema } from 'drizzle-zod';
+import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 
 import { tours } from '@/lib/schemas';
 
@@ -12,15 +12,18 @@ const params = {
 };
 
 export const tourSchema = createInsertSchema(tours, {
-	price: z.coerce.number({ required_error: 'Price is required.' }),
-	ratingAvg: z.coerce.number({ required_error: 'Rating average is required.' }),
-	difficulty: z.enum(['easy', 'medium', 'difficult'], {
-		required_error: 'Difficulty should be one of: easy, medium, difficult.',
-	}),
+	startDates: z.array(z.string()),
+});
+
+export const selectTourSchema = createSelectSchema(tours, {
+	id: z.number(),
+	difficulty: z.enum(['easy', 'medium', 'difficult']),
 });
 
 export const insertTourSchema = z.object({
-	body: tourSchema,
+	body: tourSchema.extend({
+		images: z.array(z.string()).optional(),
+	}),
 });
 
 export const getTourParamsSchema = z.object({
@@ -32,5 +35,6 @@ export const updateTourSchema = z.object({
 	body: tourSchema.partial(),
 });
 
+export type Tour = z.infer<typeof selectTourSchema>;
 export type CreateTourBody = z.infer<typeof insertTourSchema>['body'];
 export type GetTourParams = z.infer<typeof getTourParamsSchema>['params'];
