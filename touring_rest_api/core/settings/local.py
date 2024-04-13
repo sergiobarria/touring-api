@@ -8,8 +8,12 @@ ALLOWED_HOSTS = ["*"]
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": base.BASE_DIR / "db.sqlite3",
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": base.env("PG_DATABASE"),
+        "USER": base.env("PG_USER"),
+        "PASSWORD": base.env("PG_PASSWORD"),
+        "HOST": base.env("PG_HOST"),
+        "PORT": base.env("PG_PORT"),
     }
 }
 
