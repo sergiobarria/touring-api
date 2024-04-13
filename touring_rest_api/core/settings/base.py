@@ -3,7 +3,7 @@ from pathlib import Path
 
 import environ
 
-from core.config import env
+from touring_rest_api.core.config import env
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -32,6 +32,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "api",
     "tours",
 ]
 

@@ -34,3 +34,9 @@ superuser:
 requirements:
 	@echo "Generating requirements.txt..."
 	poetry export --without-hashes -o requirements.txt
+
+
+.PHONY: test
+test:
+	@echo "Running tests..."
+	poetry run python touring_rest_api/manage.py test touring_rest_api
