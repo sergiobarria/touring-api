@@ -3,7 +3,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 
 from tours.models import Tour
-from tours.serializers import TourSerializer
+from tours.serializers import TourDetailSerializer, TourListSerializer
 
 
 class TourListCreateAPIView(APIView):
@@ -12,13 +12,13 @@ class TourListCreateAPIView(APIView):
     def get(self, request):
         """List all tours."""
         tours = Tour.objects.all()
-        serializer = TourSerializer(tours, many=True)
+        serializer = TourListSerializer(tours, many=True)
 
         return APIResponse(data=serializer.data, results=len(tours))
 
     def post(self, request):
         """Create a new tour."""
-        serializer = TourSerializer(data=request.data)
+        serializer = TourListSerializer(data=request.data)
 
         if not serializer.is_valid():
             return APIResponse(errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
@@ -44,7 +44,7 @@ class TourDetailAPIView(APIView):
         if not tour:
             return APIResponse(success=False, errors="Tour not found", status_code=status.HTTP_404_NOT_FOUND)
 
-        serializer = TourSerializer(tour)
+        serializer = TourDetailSerializer(tour)
         return APIResponse(data=serializer.data)
 
     def patch(self, request, pk):
@@ -54,7 +54,7 @@ class TourDetailAPIView(APIView):
         if not tour:
             return APIResponse(success=False, errors="Tour not found", status_code=status.HTTP_404_NOT_FOUND)
 
-        serializer = TourSerializer(tour, data=request.data, partial=True)
+        serializer = TourDetailSerializer(tour, data=request.data, partial=True)
 
         if not serializer.is_valid():
             return APIResponse(errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
