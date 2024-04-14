@@ -1,3 +1,5 @@
+import sys
+
 from . import base
 
 DEBUG = base.env("DEBUG")
@@ -14,8 +16,20 @@ DATABASES = {
         "PASSWORD": base.env("PG_PASSWORD"),
         "HOST": base.env("PG_HOST"),
         "PORT": base.env("PG_PORT"),
-    }
+    },
+    "test": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "test_database_name",
+        "USER": "test_user",
+        "PASSWORD": "test_password",
+        "HOST": "localhost",
+        "PORT": "",
+    },
 }
+
+# Use test database if "test" in sys.argv
+if "test" in sys.argv:
+    DATABASES["default"] = DATABASES["test"]
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/

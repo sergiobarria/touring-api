@@ -1,13 +1,14 @@
-from django.test import SimpleTestCase
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.test import APITestCase
 
 
-class HealthCheckTestCase(SimpleTestCase):
+class HealthCheckTestCase(APITestCase):
     """Test the health check API endpoint for all API versions."""
 
     def test_get_api_v1_health(self):
         """Test the health endpoint for API version 1."""
+
         url = reverse("get_api_v1_health")
         response = self.client.get(url)
 
