@@ -2,10 +2,15 @@ version: "3.9"
 
 services:
     db:
-        image: postgres
+        image: postgres:16-alpine
+        volumes:
+            - dev_db_data:/var/lib/postgresql/data
         environment:
-            POSTGRES_DB: test_database
+            POSTGRES_DB: touring_dev
             POSTGRES_USER: test_user
             POSTGRES_PASSWORD: test_password
         ports:
             - "5432:5432"
+
+volumes:
+    dev_db_data:
