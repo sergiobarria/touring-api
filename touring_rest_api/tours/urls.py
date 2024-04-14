@@ -1,7 +1,7 @@
 from django.urls import path
 
-from .views import TourListAPIView
+from .views import TourListCreateAPIView
 
 urlpatterns = [
-    path("", TourListAPIView.as_view(), name="tour-list"),
+    path("", TourListCreateAPIView.as_view(), name="tour-list-create"),
 ]

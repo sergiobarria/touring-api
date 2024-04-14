@@ -39,4 +39,4 @@ requirements:
 .PHONY: test
 test:
 	@echo "Running tests..."
-	poetry run python touring_rest_api/manage.py test touring_rest_api
+	poetry run python touring_rest_api/manage.py test touring_rest_api --verbosity=2
