@@ -71,3 +71,14 @@ class TourDetailAPIView(APIView):
 
         tour.delete()
         return APIResponse(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class ToursTopRatedAPIView(APIView):
+    """Retrieve the top 5 rated tours sorted by ratings_average."""
+
+    def get(self, request):
+        """Top 5 rated tours."""
+        tours = Tour.objects.order_by("-ratings_average")[:5]
+        serializer = TourListSerializer(tours, many=True)
+
+        return APIResponse(data=serializer.data, results=len(tours))

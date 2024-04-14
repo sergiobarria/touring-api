@@ -2,6 +2,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
+from touring_rest_api.api.helpers import generate_random_tour_data
 from tours.models import Tour
 
 
@@ -11,18 +12,7 @@ class TourListAPITest(APITestCase):
     def setUp(self):
         self.client = APIClient()
         self.url = reverse("tour-list-create")
-        self.sample_tour_data = {
-            "name": "Great Wall Tour",
-            "duration": 5,
-            "max_group_size": 15,
-            "difficulty": "easy",
-            "price": 200,
-            "ratings_average": 4.5,
-            "ratings_quantity": 150,
-            "summary": "A brief summary",
-            "description": "A detailed description",
-            "start_dates": ["2024-04-25T10:00:00Z", "2024-07-20T10:00:00Z"],
-        }
+        self.sample_tour_data = generate_random_tour_data()
 
     def test_list_tours(self):
         """Test the list of tours endpoint"""
