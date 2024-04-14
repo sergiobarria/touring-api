@@ -1,9 +1,19 @@
+from django.db.models import Avg, Count, F, Func, IntegerField, Max, Min, Sum
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
 
+from touring_rest_api.core.constants import MONTHS
 from touring_rest_api.core.utils import APIResponse
-from tours.models import Tour
-from tours.serializers import TourDetailSerializer, TourListSerializer
+
+from .models import Tour
+from .serializers import TourDetailSerializer, TourListSerializer
+
+
+class ExtractMonthFromDates(Func):
+    function = "EXTRACT"
+    template = "%(function)s(MONTH from %(expressions)s)"
+    output_field = IntegerField()
 
 
 class TourListCreateAPIView(APIView):
@@ -82,3 +92,49 @@ class ToursTopRatedAPIView(APIView):
         serializer = TourListSerializer(tours, many=True)
 
         return APIResponse(data=serializer.data, results=len(tours))
+
+
+class ToursMonthlyPlanAPIView(APIView):
+    """Retrieve the monthly plan of tours for a given year."""
+
+    def get(self, request, year):
+        """Get the monthly plan of tours for a given year."""
+
+        year = int(year)
+        year_start = timezone.make_aware(timezone.datetime(year, 1, 1))
+        year_end = timezone.make_aware(timezone.datetime(year, 12, 31))
+
+        tours = (
+            Tour.objects.annotate(month=ExtractMonthFromDates(F("start_dates__0")))
+            .filter(start_dates__0__gte=year_start, start_dates__0__lte=year_end)
+            .values("month")
+            .annotate(num_tour_starts=Count("id"), tours=Count("name", distinct=True))
+            .order_by("month")
+        )
+
+        plan = list(tours)
+        for item in plan:
+            item["month"] = MONTHS.get(item["month"], "Unknown")
+
+        return APIResponse(data={"plan": list(tours)})
+
+
+class ToursStatsAPIView(APIView):
+    """Retrieve statistics about tours, grouped by difficulty."""
+
+    def get(self, request):
+        stats = (
+            Tour.objects.filter(ratings_average__gte=4.5)
+            .values("difficulty")
+            .annotate(
+                num_tours=Count("id"),
+                num_ratings=Sum("ratings_quantity"),
+                average_ratings=Avg("ratings_average"),
+                average_price=Avg("price"),
+                min_price=Min("price"),
+                max_price=Max("price"),
+            )
+            .order_by("average_price")
+        )
+
+        return APIResponse(data={"stats": list(stats)})
