@@ -1,5 +1,5 @@
-# from rest_framework import status
 from api.utils import APIResponse
+from rest_framework import status
 from rest_framework.views import APIView
 
 from tours.models import Tour
@@ -21,7 +21,7 @@ class TourListCreateAPIView(APIView):
         serializer = TourSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return APIResponse(errors=serializer.errors, status=400)
+            return APIResponse(errors=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         serializer.save()
-        return APIResponse(data=serializer.data, status=201)
+        return APIResponse(data=serializer.data, status=status.HTTP_201_CREATED)
