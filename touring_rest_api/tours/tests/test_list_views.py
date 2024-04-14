@@ -5,8 +5,8 @@ from rest_framework.test import APIClient, APITestCase
 from tours.models import Tour
 
 
-class TourAPITest(APITestCase):
-    """Test the Tour API views"""
+class TourListAPITest(APITestCase):
+    """Test the Tour list API views"""
 
     def setUp(self):
         self.client = APIClient()
