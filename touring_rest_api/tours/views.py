@@ -1,7 +1,7 @@
-from api.utils import APIResponse
 from rest_framework import status
 from rest_framework.views import APIView
 
+from touring_rest_api.core.utils import APIResponse
 from tours.models import Tour
 from tours.serializers import TourDetailSerializer, TourListSerializer
 

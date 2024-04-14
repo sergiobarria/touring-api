@@ -1,9 +1,9 @@
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
-from tours.models import Tour
 
-from touring_rest_api.api.helpers import generate_random_tour_data
+from touring_rest_api.core.helpers import generate_random_tour_data
+from tours.models import Tour
 
 
 class TourDetailAPITest(APITestCase):

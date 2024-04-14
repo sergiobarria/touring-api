@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
-from touring_rest_api.api.helpers import generate_random_tour_data
+from touring_rest_api.core.helpers import generate_random_tour_data
 from tours.models import Tour
 
 
