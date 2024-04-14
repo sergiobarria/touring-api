@@ -40,3 +40,13 @@ requirements:
 test:
 	@echo "Running tests..."
 	poetry run python touring_rest_api/manage.py test touring_rest_api --verbosity=2
+
+.PHONE: tours/seed
+tours/seed:
+	@echo "Running seed tours command..."
+	poetry run python touring_rest_api/manage.py seed_tours
+
+.PHONE: tours/delete
+tours/delete:
+	@echo "Running delete tours command..."
+	poetry run python touring_rest_api/manage.py delete_tours

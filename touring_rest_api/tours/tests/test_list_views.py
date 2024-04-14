@@ -11,11 +11,23 @@ class TourListAPITest(APITestCase):
     def setUp(self):
         self.client = APIClient()
         self.url = reverse("tour-list-create")
+        self.sample_tour_data = {
+            "name": "Great Wall Tour",
+            "duration": 5,
+            "max_group_size": 15,
+            "difficulty": "easy",
+            "price": 200,
+            "ratings_average": 4.5,
+            "ratings_quantity": 150,
+            "summary": "A brief summary",
+            "description": "A detailed description",
+            "start_dates": ["2024-04-25T10:00:00Z", "2024-07-20T10:00:00Z"],
+        }
 
     def test_list_tours(self):
         """Test the list of tours endpoint"""
-        Tour.objects.create(name="Great Wall Tour")
-        Tour.objects.create(name="Eiffel Tower Visit")
+        Tour.objects.create(**self.sample_tour_data)
+        Tour.objects.create(**{**self.sample_tour_data, "name": "Trip to the Moon"})
 
         response = self.client.get(self.url)
 
@@ -36,12 +48,10 @@ class TourListAPITest(APITestCase):
 
     def test_create_tour(self):
         """Test the create tour endpoint"""
-        data = {"name": "Trip to the Moon"}
-
-        response = self.client.post(self.url, data, format="json")
+        response = self.client.post(self.url, self.sample_tour_data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Tour.objects.count(), 1)
-        self.assertEqual(Tour.objects.get().name, "Trip to the Moon")
+        self.assertEqual(Tour.objects.get().name, self.sample_tour_data["name"])
         self.assertTrue("data" in response.data)
-        self.assertEqual(response.data["data"]["name"], "Trip to the Moon")
+        self.assertEqual(response.data["data"]["name"], self.sample_tour_data["name"])
