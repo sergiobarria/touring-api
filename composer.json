@@ -9,6 +9,7 @@
         "laravel/framework": "^11.9",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
+        "owen-it/laravel-auditing": "^13.6",
         "spatie/laravel-health": "^1.30",
         "spatie/laravel-sluggable": "^3.6"
     },

@@ -6,12 +6,13 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use OwenIt\Auditing\Auditable;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
 class Tour extends Model
 {
-    use HasFactory, HasSlug, HasUuids;
+    use HasFactory, HasSlug, HasUuids, Auditable;
 
     protected $fillable = ['name', 'price'];
 
