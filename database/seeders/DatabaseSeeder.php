@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\StartDate;
 use App\Models\Tour;
 use App\Models\User;
 
@@ -22,6 +23,12 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);
 
-        Tour::factory()->count(20)->create();
+        Tour::factory()->count(20)->create()->each(function (Tour $tour) {
+            $randomAmount = random_int(1, 5);
+            
+            StartDate::factory()->count($randomAmount)->create([
+                'tour_id' => $tour->id,
+            ]);
+        });
     }
 }

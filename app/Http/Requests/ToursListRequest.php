@@ -27,6 +27,8 @@ class ToursListRequest extends FormRequest
             'priceTo' => 'nullable|numeric|min:0',
             'sortBy' => 'nullable|string|in:name,price',
             'sortOrder' => 'nullable|string|in:asc,desc',
+            'include' => 'nullable|string|in:start_dates',
+            'fields' => 'nullable|string|in:id,name,slug,price,duration,max_group_size,rating,ratings_quantity,summary,description,start_dates',
         ];
     }
 

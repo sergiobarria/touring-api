@@ -16,6 +16,13 @@ return new class extends Migration {
             $table->string('name')->unique();
             $table->string('slug')->unique();
             $table->integer('price');
+            $table->integer('duration');
+            $table->integer('max_group_size');
+            $table->enum('difficulty', ['easy', 'medium', 'difficult']);
+            $table->float('rating')->default('0.0');
+            $table->integer('ratings_quantity')->default(0);
+            $table->text('summary');
+            $table->text('description')->nullable();
             $table->boolean('is_public')->default(true);
         });
     }

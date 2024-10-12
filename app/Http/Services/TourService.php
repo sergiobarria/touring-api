@@ -14,6 +14,7 @@ class TourService
             ->when($request->priceFrom, fn($query) => $query->where('price', '>=', $request->priceFrom * 100))
             ->when($request->priceTo, fn($query) => $query->where('price', '<=', $request->priceTo * 100))
             ->when($request->sortBy && $request->sortOrder, fn($query) => $query->orderBy($request->sortBy, $request->sortOrder))
+            ->when($request->has('include') && in_array('start_dates', explode(',', $request->include)), fn($query) => $query->with('startDates'))
             ->orderBy('created_at')
             ->paginate(10);
     }
