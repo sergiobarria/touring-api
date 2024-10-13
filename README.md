@@ -2,6 +2,12 @@
 
 > Laravel REST API for the Touring app
 
+## Export Telescope Assets
+
+```bash
+php artisan vendor:publish --tag=telescope-assets
+```
+
 ### Helpers
 
 Useful commands to help the IDE and the developer.
