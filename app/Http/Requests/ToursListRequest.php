@@ -29,6 +29,7 @@ class ToursListRequest extends FormRequest
             'sortOrder' => 'nullable|string|in:asc,desc',
             'include' => 'nullable|string|in:start_dates',
             'fields' => 'nullable|string|in:id,name,slug,price,duration,max_group_size,rating,ratings_quantity,summary,description,start_dates',
+            'limit' => 'nullable|integer|min:1|max:100',
         ];
     }
 
