@@ -26,10 +26,7 @@ class TourResource extends JsonResource
             'ratings_quantity' => $this->ratings_quantity,
             'summary' => $this->summary,
             'description' => $this->description,
-            'start_dates' => $this->when(
-                $request->has('include') && in_array('start_dates', explode(',', $request->include)),
-                $this->startDates->pluck('start_date')->toArray()
-            ),
+            'start_dates' => $this->whenLoaded('startDates', fn() => $this->startDates->pluck('start_date')->toArray()),
         ];
 
         if ($request->has('fields')) {
