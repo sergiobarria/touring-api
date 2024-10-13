@@ -30,9 +30,12 @@ class Tour extends Model implements Auditable
 
     protected $guarded = [];
 
-    protected $casts = [
-        'is_public' => 'boolean'
-    ];
+    protected function casts(): array
+    {
+        return [
+            'is_public' => 'boolean',
+        ];
+    }
 
     public function startDates(): HasMany
     {
