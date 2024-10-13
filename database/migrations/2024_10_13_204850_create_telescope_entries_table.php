@@ -4,7 +4,8 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     /**
      * Get the migration connection name.
      */
@@ -22,7 +23,7 @@ return new class extends Migration {
 
         $schema->create('telescope_entries', function (Blueprint $table) {
             $table->bigIncrements('sequence');
-            $table->uuid('id');
+            $table->uuid('uuid');
             $table->uuid('batch_id');
             $table->string('family_hash')->nullable();
             $table->boolean('should_display_on_index')->default(true);
@@ -30,7 +31,7 @@ return new class extends Migration {
             $table->longText('content');
             $table->dateTime('created_at')->nullable();
 
-            $table->unique('id');
+            $table->unique('uuid');
             $table->index('batch_id');
             $table->index('family_hash');
             $table->index('created_at');
@@ -38,14 +39,14 @@ return new class extends Migration {
         });
 
         $schema->create('telescope_entries_tags', function (Blueprint $table) {
-            $table->uuid('entry_id');
+            $table->uuid('entry_uuid');
             $table->string('tag');
 
-            $table->primary(['entry_id', 'tag']);
+            $table->primary(['entry_uuid', 'tag']);
             $table->index('tag');
 
-            $table->foreign('entry_id')
-                ->references('id')
+            $table->foreign('entry_uuid')
+                ->references('uuid')
                 ->on('telescope_entries')
                 ->onDelete('cascade');
         });
