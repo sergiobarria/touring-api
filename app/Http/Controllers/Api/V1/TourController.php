@@ -3,22 +3,46 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\TourListResource;
+use App\Http\Resources\TourResource;
 use App\Models\Tour;
+use Illuminate\Http\Request;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\QueryBuilder;
 
 class TourController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $tours = Tour::all();
+        $request->validate([
+            'per_page' => 'integer|between:1,100',
+            'page' => 'integer|min:1',
+            'include' => 'string',
+            'filter' => 'array',
+            'filter.*' => 'string',
+        ]);
 
-        return response()->json($tours);
+        $tours = QueryBuilder::for(Tour::class)
+            ->allowedIncludes(['schedules'])
+            ->allowedSorts(['name', 'price', 'max_group_size', 'duration_days', 'created_at'])
+            ->allowedFilters([
+                'name', 'slug', 'difficulty',
+                AllowedFilter::exact('duration_days'),
+                AllowedFilter::exact('max_group_size'),
+                AllowedFilter::scope('min_price'),
+                AllowedFilter::scope('max_price')
+            ])
+            ->defaultSort('-created_at')
+            ->paginate($request->get('per_page', 10));
+
+        return TourListResource::collection($tours);
     }
 
-    public function show(string $id)
+    public function show(Tour $tour)
     {
-        $tour = Tour::findOrFail($id);
+        $tour->load('schedules');
 
-        return response()->json($tour);
+        return new TourResource($tour);
     }
 
     public function store()

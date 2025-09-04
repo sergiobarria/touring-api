@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Tour;
 use App\Models\TourSchedule;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Carbon;
 
 /**
  * @extends Factory<TourSchedule>
@@ -22,7 +23,10 @@ class TourScheduleFactory extends Factory
     {
         return [
             'tour_id' => Tour::factory(),
-            'start_datetime_utc' => fake()->dateTimeBetween('now', '+8 months'),
+            'start_datetime_utc' => Carbon::now('UTC')
+                ->addDays(fake()->numberBetween(1, 180))
+                ->addHours(fake()->numberBetween(8, 18))
+                ->addMinutes(fake()->randomElement([0, 30])),
             'available_spots' => fake()->numberBetween(0, 15),
             'is_active' => fake()->boolean(90)
         ];

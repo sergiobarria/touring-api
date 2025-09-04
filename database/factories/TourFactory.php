@@ -22,7 +22,6 @@ class TourFactory extends Factory
     {
         $name = fake()->randomElement([
             'The Forest Hiker',
-            'Create new scratch file from selection',
             'The Snow Adventurer',
             'The City Wanderer',
             'The Park Camper',

@@ -23,4 +23,12 @@ class TourSchedule extends Model implements Auditable
     {
         return $this->belongsTo(Tour::class);
     }
+
+    protected function casts(): array
+    {
+        return [
+            'start_datetime_utc' => 'datetime',
+            'is_active' => 'boolean',
+        ];
+    }
 }

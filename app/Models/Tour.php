@@ -52,8 +52,26 @@ class Tour extends Model implements Auditable
         return $this->hasMany(TourSchedule::class);
     }
 
+    public function scopeMinPrice($query, $price)
+    {
+        return $query->where('price', '>=', $price);
+    }
+
+    public function scopeMaxPrice($query, $price)
+    {
+        return $query->where('price', '<=', $price);
+    }
+
     public function getDurationWeeksAttribute(): int
     {
         return round($this->duration_days / 7, 1);
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+        ];
     }
 }
