@@ -2,6 +2,8 @@
 
 namespace App\Data;
 
+use App\Models\Tour;
+use Illuminate\Validation\Rule;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\IntegerType;
 use Spatie\LaravelData\Attributes\Validation\Max;
@@ -38,8 +40,30 @@ class UpdateTourData extends Data
         public Optional|bool   $is_active = true,
 
         public Optional|string $description,
+
+        public array           $add_images = [],
+        public array           $remove_image_ids = []
     )
     {
         // ...
+    }
+
+    public static function rules(): array
+    {
+        return [
+            'name' => ['nullable', 'string', 'min:3', 'max:255'],
+            'duration_days' => ['nullable', 'integer', 'min:1'],
+            'max_group_size' => ['nullable', 'integer', 'min:1'],
+            'difficulty' => ['nullable', 'string', 'min:1', Rule::in(Tour::DIFFICULTY_ENUM)],
+            'price' => ['nullable', 'numeric', 'min:0'],
+            'price_discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'summary' => ['nullable', 'string', 'max:255'],
+            'is_active' => ['nullable', 'boolean'],
+            'description' => ['nullable', 'string'],
+            'add_images' => ['nullable', 'array', 'max:5'],
+            'add_images.*' => ['image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+            'remove_image_ids' => ['nullable', 'array'],
+            'remove_image_ids.*' => ['integer', 'exists:media,id'],
+        ];
     }
 }

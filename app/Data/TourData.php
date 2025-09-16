@@ -20,6 +20,14 @@ class TourData extends Data
         public ?string $description,
         public bool    $is_active,
 
+        /** @var array<string> */
+        public array   $images_urls,
+
+        // Virtual properties
+        public int     $duration_weeks,
+        /** @var array<string> */
+        public array   $upcoming_dates,
+
         // Relations
         /** @var array<TourDateData> */
         public ?array  $dates

@@ -2,6 +2,8 @@
 
 namespace App\Data;
 
+use App\Models\Tour;
+use Illuminate\Validation\Rule;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\IntegerType;
 use Spatie\LaravelData\Attributes\Validation\Max;
@@ -38,8 +40,27 @@ class StoreTourData extends Data
         public bool    $is_active = true,
 
         public ?string $description = null,
+
+        public array   $images = [],
     )
     {
         // ...
+    }
+
+    public static function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'min:3', 'max:255'],
+            'duration_days' => ['required', 'integer', 'min:1'],
+            'max_group_size' => ['required', 'integer', 'min:1'],
+            'difficulty' => ['required', 'string', 'min:1', Rule::in(Tour::DIFFICULTY_ENUM)],
+            'price' => ['required', 'numeric', 'min:0'],
+            'price_discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'summary' => ['required', 'string', 'max:255'],
+            'is_active' => ['boolean'],
+            'description' => ['nullable', 'string'],
+            'images' => ['nullable', 'array', 'max:5'],
+            'images.*' => ['image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+        ];
     }
 }
