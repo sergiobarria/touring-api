@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Collection;
 use OwenIt\Auditing\Contracts\Auditable;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
@@ -15,41 +14,21 @@ class Tour extends Model implements Auditable
 {
     use HasUlids, HasFactory, HasSlug, \OwenIt\Auditing\Auditable;
 
+    public const ALLOWED_SELECT_FIELDS = [
+        'id', 'name', 'slug', 'max_group_size', 'duration_days', 'price', 'max_group_size',
+        'price_discount_percent', 'summary', 'description', 'rating_avg', 'rating_count'
+    ];
+    public const ALLOWED_INCLUDES = ['dates'];
+    public const ALLOWED_SORTS = ['name', 'price', 'max_group_size', 'duration_days', 'created_at'];
+    public const DIFFICULTY_ENUM = ['easy', 'moderate', 'difficult'];
     protected $fillable = [
-        'name',
-        'duration_days',
-        'max_group_size',
-        'difficulty',
-        'rating_avg',
-        'rating_count',
-        'price',
-        'price_discount_percent',
-        'summary',
-        'description'
+        'name', 'duration_days', 'max_group_size', 'difficulty', 'rating_avg', 'rating_count',
+        'price', 'price_discount_percent', 'summary', 'description', 'is_active',
     ];
 
-    protected $appends = ['upcoming_dates', 'duration_weeks'];
-
-    public function getSlugOptions(): SlugOptions
+    public function dates(): HasMany
     {
-        return SlugOptions::create()
-            ->generateSlugsFrom('name')
-            ->saveSlugsTo('slug');
-    }
-
-    public function getUpcomingDatesAttribute(): Collection
-    {
-        return $this->schedules()
-            ->where('start_datetime_utc', '>', now())
-            ->where('is_active', true)
-            ->orderBy('start_datetime_utc')
-            ->get()
-            ->pluck('start_datetime_utc');
-    }
-
-    public function schedules(): HasMany
-    {
-        return $this->hasMany(TourSchedule::class);
+        return $this->hasMany(TourDate::class);
     }
 
     public function scopeMinPrice($query, $price)
@@ -62,14 +41,17 @@ class Tour extends Model implements Auditable
         return $query->where('price', '<=', $price);
     }
 
-    public function getDurationWeeksAttribute(): int
+    public function getSlugOptions(): SlugOptions
     {
-        return round($this->duration_days / 7, 1);
+        return SlugOptions::create()
+            ->generateSlugsFrom('name')
+            ->saveSlugsTo('slug');
     }
 
     protected function casts(): array
     {
         return [
+            'is_active' => 'boolean',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];

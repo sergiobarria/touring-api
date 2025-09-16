@@ -2,61 +2,70 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Data\StoreTourData;
+use App\Data\TourData;
+use App\Data\TourListData;
+use App\Data\UpdateTourData;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\TourListResource;
-use App\Http\Resources\TourResource;
+use App\Http\Requests\TourListRequest;
 use App\Models\Tour;
-use Illuminate\Http\Request;
+use Dedoc\Scramble\Attributes\Group;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\QueryBuilder;
 
+#[Group('Tours')]
 class TourController extends Controller
 {
-    public function index(Request $request)
+    /** List tours. */
+    public function index(TourListRequest $request)
     {
-        $request->validate([
-            'per_page' => 'integer|between:1,100',
-            'page' => 'integer|min:1',
-            'include' => 'string',
-            'filter' => 'array',
-            'filter.*' => 'string',
-        ]);
-
         $tours = QueryBuilder::for(Tour::class)
-            ->allowedIncludes(['schedules'])
-            ->allowedSorts(['name', 'price', 'max_group_size', 'duration_days', 'created_at'])
+            ->allowedFields(Tour::ALLOWED_SELECT_FIELDS)
+            ->allowedIncludes(Tour::ALLOWED_INCLUDES)
+            ->allowedSorts(Tour::ALLOWED_SORTS)
             ->allowedFilters([
                 'name', 'slug', 'difficulty',
                 AllowedFilter::exact('duration_days'),
                 AllowedFilter::exact('max_group_size'),
                 AllowedFilter::scope('min_price'),
-                AllowedFilter::scope('max_price')
+                AllowedFilter::scope('max_price'),
             ])
-            ->defaultSort('-created_at')
-            ->paginate($request->get('per_page', 10));
+            ->where('is_active', true)
+            ->defaultSort(['created_at', 'name'])
+            ->paginate();
 
-        return TourListResource::collection($tours);
+        return TourListData::collect($tours);
     }
 
-    public function show(Tour $tour)
+    /** Create a tour */
+    public function store(StoreTourData $data)
     {
-        $tour->load('schedules');
+        $tour = Tour::create($data->toArray());
 
-        return new TourResource($tour);
+        return TourData::from($tour)->toResponse(request())->setStatusCode(201);
     }
 
-    public function store()
+    /** Get Tour by ID. */
+    public function show(string $id)
     {
-        return response()->json('Save tour');
+        $tour = Tour::with('dates')->findOrFail($id);
+
+        return TourData::from($tour);
     }
 
-    public function update()
+    /** Update tour */
+    public function update(UpdateTourData $data, Tour $tour)
     {
-        return response()->json('Update tour');
+        $tour->update($data->toArray());
+
+        return TourData::from($tour);
     }
 
-    public function destroy()
+    /** Delete tour */
+    public function destroy(Tour $tour)
     {
-        return response()->json('Delete tour');
+        $tour->delete();
+
+        return response()->noContent();
     }
 }

@@ -24,12 +24,12 @@ return [
         /*
          * API version.
          */
-        'version' => env('API_VERSION', '1.0.0'),
+        'version' => env('API_VERSION', '0.0.1'),
 
         /*
          * Description rendered on the home page of the API documentation (`/docs/api`).
          */
-        'description' => 'Touring REST API Documentation',
+        'description' => '',
     ],
 
     /*
@@ -39,12 +39,12 @@ return [
         /*
          * Define the title of the documentation's website. App name is used when this config is `null`.
          */
-        'title' => null,
+        'title' => env('APP_NAME', 'Laravel'),
 
         /*
          * Define the theme of the documentation. Available options are `light`, `dark`, and `system`.
          */
-        'theme' => 'light',
+        'theme' => 'dark',
 
         /*
          * Hide the `Try It` feature. Enabled by default.

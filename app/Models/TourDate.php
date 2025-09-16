@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use OwenIt\Auditing\Contracts\Auditable;
 
-class TourSchedule extends Model implements Auditable
+class TourDate extends Model implements Auditable
 {
     use HasUlids, HasFactory, \OwenIt\Auditing\Auditable;
 
@@ -27,7 +27,7 @@ class TourSchedule extends Model implements Auditable
     protected function casts(): array
     {
         return [
-            'start_datetime_utc' => 'datetime',
+            'start_datetime_utc' => 'immutable_datetime',
             'is_active' => 'boolean',
         ];
     }

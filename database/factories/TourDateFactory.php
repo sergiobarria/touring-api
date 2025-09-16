@@ -2,17 +2,16 @@
 
 namespace Database\Factories;
 
-use App\Models\Tour;
-use App\Models\TourSchedule;
+use App\Models\TourDate;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Carbon;
 
 /**
- * @extends Factory<TourSchedule>
+ * @extends Factory<TourDate>
  */
-class TourScheduleFactory extends Factory
+class TourDateFactory extends Factory
 {
-    protected $model = TourSchedule::class;
+    protected $model = TourDate::class;
 
     /**
      * Define the model's default state.
@@ -22,12 +21,11 @@ class TourScheduleFactory extends Factory
     public function definition(): array
     {
         return [
-            'tour_id' => Tour::factory(),
             'start_datetime_utc' => Carbon::now('UTC')
                 ->addDays(fake()->numberBetween(1, 180))
                 ->addHours(fake()->numberBetween(8, 18))
                 ->addMinutes(fake()->randomElement([0, 30])),
-            'available_spots' => fake()->numberBetween(0, 15),
+            'available_spots' => fake()->numberBetween(0, 30),
             'is_active' => fake()->boolean(90)
         ];
     }

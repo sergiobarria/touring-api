@@ -12,6 +12,7 @@ return new class extends Migration {
     {
         Schema::create('tours', function (Blueprint $table) {
             $table->ulid('id')->primary();
+            $table->timestamps();
             $table->string('name');
             $table->string('slug')->unique();
             $table->unsignedTinyInteger('duration_days');
@@ -23,7 +24,7 @@ return new class extends Migration {
             $table->unsignedInteger('rating_count')->nullable();
             $table->string('summary', 500);
             $table->text('description')->nullable();
-            $table->timestamps();
+            $table->boolean('is_active')->default(true);
 
             // Indexes
             $table->index('difficulty');

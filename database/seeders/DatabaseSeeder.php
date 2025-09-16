@@ -2,8 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\Tour;
-use App\Models\TourSchedule;
 use Illuminate\Database\Seeder;
 
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
@@ -15,10 +13,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Call seeders needed in all environments
+        $this->call([
+            // ...
+        ]);
+
+        // Call seeders needed only in development
         if (app()->environment() == 'local') {
-            Tour::factory()->count(20)
-                ->has(TourSchedule::factory()->count(3), 'schedules')
-                ->create();
+            $this->call([
+                TourSeeder::class
+                // other development seeders...
+            ]);
         }
     }
 }

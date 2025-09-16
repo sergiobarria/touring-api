@@ -3,8 +3,9 @@
 namespace App\Providers;
 
 use Dedoc\Scramble\Scramble;
+use Illuminate\Routing\Route;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Telescope\TelescopeServiceProvider;
+use Illuminate\Support\Str;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -13,20 +14,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        if ($this->app->environment('local') && class_exists(TelescopeServiceProvider::class)) {
-            $this->app->register(TelescopeServiceProvider::class);
+        if ($this->app->environment('local') && class_exists(\Laravel\Telescope\TelescopeServiceProvider::class)) {
+            $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);
             $this->app->register(TelescopeServiceProvider::class);
         }
 
-        // Register API Versions with Scramble
-        Scramble::registerApi('v1', [
-            'api_path' => '/api/v1',
-            'info' => ['version' => '1.0'],
-        ]);
-        Scramble::registerApi('v2', [
-            'api_path' => '/api/v2',
-            'info' => ['version' => '2.0'],
-        ]);
+        Scramble::configure()
+            ->routes(function (Route $route) {
+                return Str::startsWith($route->uri, 'api/');
+            });
     }
 
     /**

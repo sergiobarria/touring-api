@@ -10,13 +10,13 @@ return new class extends Migration {
      */
     public function up(): void
     {
-        Schema::create('tour_schedules', function (Blueprint $table) {
+        Schema::create('tour_dates', function (Blueprint $table) {
             $table->ulid('id')->primary();
+            $table->timestamps();
             $table->foreignUlid('tour_id')->constrained('tours')->onDelete('cascade');
             $table->timestamp('start_datetime_utc');
             $table->unsignedTinyInteger('available_spots')->nullable()->default(0);
-            $table->boolean('is_active')->default(true);
-            $table->timestamps();
+            $table->boolean('is_active')->nullable()->default(true);
 
             // Indexes
             $table->index(['tour_id', 'start_datetime_utc']);
@@ -28,6 +28,6 @@ return new class extends Migration {
      */
     public function down(): void
     {
-        Schema::dropIfExists('tour_schedules');
+        Schema::dropIfExists('tour_dates');
     }
 };
