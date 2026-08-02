@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Tours\CreateTour;
+use App\Actions\Tours\DeleteTour;
+use App\Actions\Tours\ListTours;
+use App\Actions\Tours\ShowTour;
+use App\Actions\Tours\UpdateTour;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreTourRequest;
 use App\Http\Requests\Api\V1\TourListRequest;
 use App\Http\Requests\Api\V1\UpdateTourRequest;
 use App\Http\Resources\TourListResource;
 use App\Http\Resources\TourResource;
-use App\Models\Tour;
-use App\Services\Tours\TourGuideService;
 use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\Header;
 use Dedoc\Scramble\Attributes\QueryParameter;
@@ -17,18 +20,11 @@ use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response as HttpResponse;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
-use Spatie\QueryBuilder\AllowedFilter;
-use Spatie\QueryBuilder\AllowedInclude;
-use Spatie\QueryBuilder\QueryBuilder;
 use Throwable;
 
 #[Group('Tours')]
 class TourController extends Controller
 {
-    public function __construct(private readonly TourGuideService $guideTeams) {}
-
     /**
      * List all tours.
      *
@@ -40,30 +36,12 @@ class TourController extends Controller
         type: 'string',
         example: '-price,name',
     )]
-    public function index(TourListRequest $request): AnonymousResourceCollection
+    public function index(TourListRequest $request, ListTours $action): AnonymousResourceCollection
     {
-        $tours = QueryBuilder::for(Tour::class)
-            ->with(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name'])
-            ->allowedIncludes(AllowedInclude::relationship('startDates'))
-            ->allowedSorts(...Tour::ALLOWED_SORTS)
-            ->allowedFilters(
-                'name',
-                'slug',
-                AllowedFilter::exact('difficulty'),
-                AllowedFilter::exact('duration_days'),
-                AllowedFilter::exact('max_group_size'),
-                AllowedFilter::scope('min_price'),
-                AllowedFilter::scope('max_price'),
-            )
-            ->where('is_active', true)
-            ->defaultSorts('created_at', 'name')
-            ->paginate(
-                perPage: $request->integer('per_page', 15),
-                page: $request->integer('page', 1),
-            )
-            ->withQueryString();
-
-        return TourListResource::collection($tours);
+        return TourListResource::collection($action->handle(
+            perPage: $request->integer('per_page', 15),
+            page: $request->integer('page', 1),
+        ));
     }
 
     /**
@@ -87,15 +65,9 @@ class TourController extends Controller
         required: true,
         status: 201,
     )]
-    public function store(StoreTourRequest $request): JsonResponse
+    public function store(StoreTourRequest $request, CreateTour $action): JsonResponse
     {
-        $tour = DB::transaction(function () use ($request): Tour {
-            $tour = Tour::create($request->toDto()->toArray());
-            $this->guideTeams->sync($tour, $request->validated('guide_ids', []));
-
-            return $tour;
-        });
-        $tour->refresh()->load(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name']);
+        $tour = $action->handle($request->toDto(), $request->validated('guide_ids', []));
 
         return TourResource::make($tour)
             ->response()
@@ -109,15 +81,9 @@ class TourController extends Controller
      * Retrieve a tour by ULID with optional start dates and sparse fields.
      */
     #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
-    public function show(string $tour): TourResource
+    public function show(string $tour, ShowTour $action): TourResource
     {
-        $tour = QueryBuilder::for(Tour::class)
-            ->with(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name'])
-            ->allowedIncludes(AllowedInclude::relationship('startDates'))
-            ->where('is_active', true)
-            ->findOrFail($tour);
-
-        return TourResource::make($tour);
+        return TourResource::make($action->handle($tour));
     }
 
     /**
@@ -128,33 +94,9 @@ class TourController extends Controller
      * @throws Throwable
      */
     #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
-    public function update(UpdateTourRequest $request, string $tour): TourResource
+    public function update(UpdateTourRequest $request, string $tour, UpdateTour $action): TourResource
     {
-        $tour = DB::transaction(function () use ($request, $tour): Tour {
-            $lockedTour = Tour::query()->lockForUpdate()->findOrFail($tour);
-            $attributes = $request->toDto($lockedTour)->toArray();
-
-            if (array_key_exists('max_group_size', $request->validated())
-                && $lockedTour->startDates()
-                    ->where('available_spots', '>', $attributes['max_group_size'])
-                    ->exists()) {
-                throw ValidationException::withMessages([
-                    'max_group_size' => 'The maximum group size must not be less than available spots on an existing start date.',
-                ]);
-            }
-
-            $lockedTour->update($attributes);
-
-            if ($request->has('guide_ids')) {
-                $this->guideTeams->sync($lockedTour, $request->validated('guide_ids'));
-            }
-
-            return $lockedTour->refresh();
-        });
-
-        $tour->load(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name']);
-
-        return TourResource::make($tour);
+        return TourResource::make($action->handle($tour, $request));
     }
 
     /**
@@ -163,11 +105,9 @@ class TourController extends Controller
      * Soft-delete a tour by ULID while preserving all of its start dates.
      */
     #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
-    public function destroy(string $tour): HttpResponse
+    public function destroy(string $tour, DeleteTour $action): HttpResponse
     {
-        $tour = Tour::findOrFail($tour);
-
-        $tour->delete();
+        $action->handle($tour);
 
         return response()->noContent();
     }

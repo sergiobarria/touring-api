@@ -2,22 +2,23 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\TourStartDates\CreateTourStartDate;
+use App\Actions\TourStartDates\DeleteTourStartDate;
+use App\Actions\TourStartDates\ListTourStartDates;
+use App\Actions\TourStartDates\ShowTourStartDate;
+use App\Actions\TourStartDates\UpdateTourStartDate;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreTourStartDateRequest;
 use App\Http\Requests\Api\V1\TourStartDateListRequest;
 use App\Http\Requests\Api\V1\UpdateTourStartDateRequest;
 use App\Http\Resources\TourStartDateResource;
 use App\Models\Tour;
-use App\Models\TourStartDate;
 use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\Header;
 use Dedoc\Scramble\Attributes\Response;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response as HttpResponse;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Throwable;
 
 #[Group('Tour Start Dates')]
@@ -28,18 +29,16 @@ class TourStartDateController extends Controller
      *
      * Return all non-deleted historical and future start dates in chronological order.
      */
-    public function index(TourStartDateListRequest $request, Tour $tour): AnonymousResourceCollection
-    {
-        $startDates = $tour->startDates()
-            ->orderBy('start_datetime_utc')
-            ->orderBy('id')
-            ->paginate(
-                perPage: $request->integer('per_page', 15),
-                page: $request->integer('page', 1),
-            )
-            ->withQueryString();
-
-        return TourStartDateResource::collection($startDates);
+    public function index(
+        TourStartDateListRequest $request,
+        Tour $tour,
+        ListTourStartDates $action,
+    ): AnonymousResourceCollection {
+        return TourStartDateResource::collection($action->handle(
+            tour: $tour,
+            perPage: $request->integer('per_page', 15),
+            page: $request->integer('page', 1),
+        ));
     }
 
     /**
@@ -63,20 +62,12 @@ class TourStartDateController extends Controller
         required: true,
         status: 201,
     )]
-    public function store(StoreTourStartDateRequest $request, Tour $tour): JsonResponse
-    {
-        try {
-            $startDate = DB::transaction(function () use ($request, $tour): TourStartDate {
-                $lockedTour = Tour::query()->lockForUpdate()->findOrFail($tour->getKey());
-                $attributes = $request->toDto()->toArray();
-
-                $this->ensureCapacity($lockedTour, $attributes['available_spots']);
-
-                return $lockedTour->startDates()->create($attributes);
-            });
-        } catch (QueryException $exception) {
-            $this->throwDuplicateValidationException($exception);
-        }
+    public function store(
+        StoreTourStartDateRequest $request,
+        Tour $tour,
+        CreateTourStartDate $action,
+    ): JsonResponse {
+        $startDate = $action->handle($tour, $request->toDto());
 
         return TourStartDateResource::make($startDate)
             ->response()
@@ -90,9 +81,12 @@ class TourStartDateController extends Controller
      * Retrieve a non-deleted start date that belongs to the given tour.
      */
     #[Response(404, description: 'Tour or start date not found.', type: 'array{message: string}')]
-    public function show(Tour $tour, string $tourStartDate): TourStartDateResource
-    {
-        return TourStartDateResource::make($this->findStartDate($tour, $tourStartDate));
+    public function show(
+        Tour $tour,
+        string $tourStartDate,
+        ShowTourStartDate $action,
+    ): TourStartDateResource {
+        return TourStartDateResource::make($action->handle($tour, $tourStartDate));
     }
 
     /**
@@ -107,25 +101,9 @@ class TourStartDateController extends Controller
         UpdateTourStartDateRequest $request,
         Tour $tour,
         string $tourStartDate,
+        UpdateTourStartDate $action,
     ): TourStartDateResource {
-        $startDate = $this->findStartDate($tour, $tourStartDate);
-
-        try {
-            $startDate = DB::transaction(function () use ($request, $tour, $startDate): TourStartDate {
-                $lockedTour = Tour::query()->lockForUpdate()->findOrFail($tour->getKey());
-                $lockedStartDate = $lockedTour->startDates()->lockForUpdate()->findOrFail($startDate->getKey());
-                $attributes = $request->toDto($lockedStartDate)->toArray();
-
-                $this->ensureCapacity($lockedTour, $attributes['available_spots']);
-                $lockedStartDate->update($attributes);
-
-                return $lockedStartDate->refresh();
-            });
-        } catch (QueryException $exception) {
-            $this->throwDuplicateValidationException($exception);
-        }
-
-        return TourStartDateResource::make($startDate);
+        return TourStartDateResource::make($action->handle($tour, $tourStartDate, $request));
     }
 
     /**
@@ -134,35 +112,13 @@ class TourStartDateController extends Controller
      * Soft-delete a historical or future departure.
      */
     #[Response(404, description: 'Tour or start date not found.', type: 'array{message: string}')]
-    public function destroy(Tour $tour, string $tourStartDate): HttpResponse
-    {
-        $this->findStartDate($tour, $tourStartDate)->delete();
+    public function destroy(
+        Tour $tour,
+        string $tourStartDate,
+        DeleteTourStartDate $action,
+    ): HttpResponse {
+        $action->handle($tour, $tourStartDate);
 
         return response()->noContent();
-    }
-
-    private function findStartDate(Tour $tour, string $tourStartDate): TourStartDate
-    {
-        return $tour->startDates()->findOrFail($tourStartDate);
-    }
-
-    private function throwDuplicateValidationException(QueryException $exception): never
-    {
-        if (in_array($exception->getCode(), ['23000', '23505'], strict: true)) {
-            throw ValidationException::withMessages([
-                'start_datetime_utc' => 'The tour already has a start date at this instant.',
-            ]);
-        }
-
-        throw $exception;
-    }
-
-    private function ensureCapacity(Tour $tour, int $availableSpots): void
-    {
-        if ($availableSpots > $tour->max_group_size) {
-            throw ValidationException::withMessages([
-                'available_spots' => 'The available spots field must not be greater than the tour maximum group size.',
-            ]);
-        }
     }
 }
