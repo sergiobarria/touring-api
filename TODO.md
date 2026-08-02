@@ -1,6 +1,5 @@
-# TODO
+# Product backlog
 
-## Tour reviews
+The previous review-qualification items are implemented: review creation requires a confirmed booking for the same tour with a departure instant in the past.
 
-- [ ] Require the authenticated user to have purchased the specific tour departure before creating a review.
-- [ ] Require that purchased tour departure to have ended before creating a review.
+Future product capabilities are tracked as deferred scope in [docs/01_SPEC.md](docs/01_SPEC.md#deferred-scope). Add an item here only when it is actionable, not already part of the current contract, and has enough context to be prioritized.
