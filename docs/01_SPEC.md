@@ -39,6 +39,16 @@ The readiness checks run every minute and their ULID-keyed results are retained 
 
 Local development runs Laravel's scheduler through `composer run dev`. Production infrastructure must invoke `php artisan schedule:run` once per minute. Expired Sanctum token records are pruned daily after they have been expired for 24 hours.
 
+### 2.2 API security baseline
+
+Every versioned API route uses a named global rate limiter. Guests receive 60 requests per minute per IP address. Authenticated requests receive 120 requests per minute per user ULID; the authenticated identity takes precedence over the request IP. Registration additionally allows five requests per minute per IP, and login additionally allows 30 requests per minute per IP. Endpoint-specific limits are cumulative with the global limit. Login's separate five-failed-credential lockout remains keyed by normalized email and IP so request-volume protection does not weaken brute-force protection.
+
+Rate-limit counters use the cache store named by `RATE_LIMITER_STORE`. The example environment uses the database store, while automated tests omit the setting and fall back to their default array cache. Production should set `RATE_LIMITER_STORE=redis` when Redis is available so counters are shared efficiently by every application instance.
+
+Host-header validation trusts only the exact hostname configured in `APP_URL`; subdomains are not implicitly trusted. Production configuration must therefore set `APP_URL` to the API's canonical externally reachable URL. Successful and validation-error responses from registration and login include `Cache-Control: no-store, private` and `Pragma: no-cache` so token and credential-related payloads are not retained by clients or intermediaries. Telescope redacts passwords, password confirmations, current passwords, reset tokens, authorization headers, and returned plaintext access tokens.
+
+Tour read and write routes remain public during this phase and receive the global guest/IP rate limit. Authentication and authorization for tour mutations must be added before production use.
+
 ## 3. Domain model
 
 ### 3.1 Tour
@@ -195,7 +205,7 @@ POST /api/v1/auth/register
 
 The request requires `name`, `email`, `password`, and `password_confirmation`. Emails are trimmed and normalized to lowercase before validation, and passwords use the application's default Laravel password rules and must be confirmed. Unknown fields, including `device_name`, are rejected. A successful request atomically creates the user and 30-day token and returns `201 Created`.
 
-Registration is limited to five requests per IP address per minute.
+Registration is limited to five requests per IP address per minute in addition to the global API limit. Registration responses are not cacheable.
 
 #### Login
 
@@ -203,7 +213,7 @@ Registration is limited to five requests per IP address per minute.
 POST /api/v1/auth/login
 ```
 
-The request requires `email` and `password`. Unknown fields, including `device_name`, are rejected. A successful request returns `200 OK` with a new independent 30-day token; existing tokens remain valid. Unknown users and incorrect passwords return the same generic validation error to avoid account enumeration. Five failed attempts for the same normalized email and IP address within one minute cause subsequent attempts to return `429 Too Many Requests`; a successful login clears that failure counter.
+The request requires `email` and `password`. Unknown fields, including `device_name`, are rejected. A successful request returns `200 OK` with a new independent 30-day token; existing tokens remain valid. Unknown users and incorrect passwords return the same generic validation error to avoid account enumeration. Login is limited to 30 requests per IP address per minute in addition to the global API limit. Independently, five failed attempts for the same normalized email and IP address within one minute cause subsequent attempts to return `429 Too Many Requests`; a successful login clears that failure counter. Login responses are not cacheable.
 
 #### Logout
 
@@ -567,7 +577,7 @@ When no departures qualify, `plan` is an empty array.
 - Successful logout returns `204 No Content` and revokes only the current token.
 - Invalid authentication input, duplicate emails, and incorrect credentials return `422 Unprocessable Entity`; incorrect credentials never distinguish an unknown email from a wrong password.
 - Missing, malformed, expired, and revoked Bearer tokens return `401 Unauthorized` on protected endpoints.
-- Authentication rate-limit lockouts return `429 Too Many Requests` with retry information.
+- Global API limits, authentication request ceilings, and failed-credential lockouts return `429 Too Many Requests` with retry information.
 - Successful list and detail requests return `200 OK`.
 - Successful tour creation returns `201 Created`, a detail resource, and a `Location` header.
 - Successful partial updates return `200 OK` with the updated detail resource.
@@ -591,6 +601,8 @@ When no departures qualify, `plan` is an empty array.
 `routes/api.php` is the API version dispatcher. Version 1 routes are defined in `routes/api_v1.php` and mounted with the `v1` URL and route-name prefixes.
 
 These routes are currently public:
+
+All routes in this table receive the global guest/IP rate limit. Tour mutations are intentionally still public in the current phase and must be authorization-protected before production use.
 
 | Method | URI | Purpose |
 | --- | --- | --- |

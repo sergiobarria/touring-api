@@ -35,7 +35,8 @@ it('registers versioned authentication routes with only logout protected', funct
     expect($routes['v1.auth.register']->methods())->toBe(['POST'])
         ->and($routes['v1.auth.login']->methods())->toBe(['POST'])
         ->and($routes['v1.auth.logout']->methods())->toBe(['POST'])
-        ->and($routes['v1.auth.register']->gatherMiddleware())->toContain('throttle:5,1')
+        ->and($routes['v1.auth.register']->gatherMiddleware())->toContain('throttle:registration', 'no-store')
+        ->and($routes['v1.auth.login']->gatherMiddleware())->toContain('throttle:login', 'no-store')
         ->and($routes['v1.auth.login']->gatherMiddleware())->not->toContain('auth:sanctum')
         ->and($routes['v1.auth.logout']->gatherMiddleware())->toContain('auth:sanctum')
         ->and($routes['v1.tours.store']->gatherMiddleware())->not->toContain('auth:sanctum');
@@ -51,6 +52,8 @@ it('registers a ulid user and returns an api token', function () {
     $response
         ->assertCreated()
         ->assertHeader('Content-Type', 'application/vnd.api+json')
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertHeader('Pragma', 'no-cache')
         ->assertJsonPath('data.type', 'users')
         ->assertJsonPath('data.attributes.name', 'Jane Doe')
         ->assertJsonPath('data.attributes.email', 'jane@example.com')
@@ -114,6 +117,10 @@ it('limits registration attempts by ip', function () {
     $this->postJson('/api/v1/auth/register', [])
         ->assertTooManyRequests()
         ->assertHeader('Retry-After');
+
+    $this->travel(61)->seconds();
+
+    $this->postJson('/api/v1/auth/register', [])->assertUnprocessable();
 });
 
 it('logs in with normalized credentials and preserves other tokens', function () {
@@ -133,6 +140,8 @@ it('logs in with normalized credentials and preserves other tokens', function ()
     $response
         ->assertOk()
         ->assertHeader('Content-Type', 'application/vnd.api+json')
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertHeader('Pragma', 'no-cache')
         ->assertJsonPath('data.id', $user->id)
         ->assertJsonPath('data.attributes.email', 'jane@example.com')
         ->assertJsonPath('meta.token_type', 'Bearer')
@@ -177,6 +186,10 @@ it('documents authentication requests as closed objects', function () {
         ->assertOk()
         ->assertJsonPath('components.schemas.RegisterRequest.additionalProperties', false)
         ->assertJsonPath('components.schemas.LoginRequest.additionalProperties', false)
+        ->assertJsonPath(
+            'paths./auth/login.post.responses.429.description',
+            'Too many login requests or failed login attempts.',
+        )
         ->assertJsonMissingPath('components.schemas.RegisterRequest.properties.device_name')
         ->assertJsonMissingPath('components.schemas.LoginRequest.properties.device_name');
 });

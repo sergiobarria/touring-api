@@ -11,8 +11,8 @@ Route::prefix('auth')
     ->name('auth.')
     ->controller(AuthController::class)
     ->group(function (): void {
-        Route::post('register', 'register')->middleware('throttle:5,1')->name('register');
-        Route::post('login', 'login')->name('login');
+        Route::post('register', 'register')->middleware(['throttle:registration', 'no-store'])->name('register');
+        Route::post('login', 'login')->middleware(['throttle:login', 'no-store'])->name('login');
         Route::post('logout', 'logout')->middleware('auth:sanctum')->name('logout');
     });
 

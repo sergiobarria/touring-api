@@ -19,6 +19,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Rate Limiter Cache Store
+    |--------------------------------------------------------------------------
+    |
+    | This store is used for API and authentication rate-limit counters. When
+    | no store is configured, Laravel falls back to the default cache store.
+    |
+    */
+
+    'limiter' => env('RATE_LIMITER_STORE'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Cache Stores
     |--------------------------------------------------------------------------
     |

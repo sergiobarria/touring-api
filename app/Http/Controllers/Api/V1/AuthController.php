@@ -35,7 +35,7 @@ class AuthController extends Controller
      *
      * Exchange valid credentials for an API token.
      */
-    #[Response(429, description: 'Too many failed login attempts.', type: 'array{message: string}')]
+    #[Response(429, description: 'Too many login requests or failed login attempts.', type: 'array{message: string}')]
     public function login(LoginRequest $request, LoginUser $loginUser): JsonResponse
     {
         return $this->authenticationResponse($loginUser->handle($request));
