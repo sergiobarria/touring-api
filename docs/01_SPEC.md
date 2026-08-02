@@ -6,7 +6,7 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides a public tour catalog and supports CRUD operations for tours and their start dates. Restoration, booking, authentication, reviews, and media management are outside the current scope.
+The current implementation provides a public tour catalog, CRUD operations for tours and their start dates, and read-only tour analytics. Restoration, booking, authentication, reviews, and media management are outside the current scope.
 
 ## 2. Technical conventions
 
@@ -75,7 +75,7 @@ A tour can have many scheduled start dates. Each start date belongs to exactly o
 
 Soft-deleting a tour does not delete or modify its start dates. This preserves the complete schedule for a future restoration. The database foreign key retains a cascading hard-delete constraint as an integrity fallback, but application workflows must not invoke it.
 
-The combination of `tour_id` and `start_datetime_utc` is unique. Inputs representing the same instant with different UTC offsets are duplicates because timestamps are normalized to UTC. Soft-deleted records continue reserving their tour and instant. Reducing a tour's `max_group_size` is rejected when a non-deleted start date has more available spots than the proposed maximum.
+The combination of `tour_id` and `start_datetime_utc` is unique. Inputs representing the same instant with different UTC offsets are duplicates because timestamps are normalized to UTC. Soft-deleted records continue reserving their tour and instant. A separate `start_datetime_utc` index supports analytics queries spanning every tour in a calendar year. Reducing a tour's `max_group_size` is rejected when a non-deleted start date has more available spots than the proposed maximum.
 
 ## 4. Public API conventions
 
@@ -366,7 +366,73 @@ Soft-deletes the departure and returns `204 No Content`. It disappears from star
 
 The server derives `tour_id` from the nested URL and manages identifiers and timestamps. These fields and all unknown fields are rejected with `422 Unprocessable Entity`. Concurrent duplicate creation or update is also translated from the database uniqueness constraint into a validation error.
 
-## 7. Errors and validation
+## 7. Tour analytics endpoints
+
+Tour analytics are public, read-only views of the active catalog. All analytics exclude inactive and soft-deleted tours. Monthly analytics additionally exclude inactive and soft-deleted start dates. These endpoints have fixed behavior and do not expose pagination, filtering, custom sorting, includes, or sparse fieldsets.
+
+### 7.1 List top tours
+
+```http
+GET /api/v1/tour-analytics/top-tours
+```
+
+Returns at most five JSON:API `tours` resources. Rated tours are ordered by `rating_avg` descending, then `price` ascending, and finally ULID ascending. Tours without a rating are ordered after all rated tours. Each resource exposes only `name`, `price`, `rating_avg`, `summary`, and `difficulty`; request query parameters cannot alter this fieldset or ordering.
+
+### 7.2 Get tour statistics
+
+```http
+GET /api/v1/tour-analytics/stats
+```
+
+Includes tours with `rating_avg >= 4.5`, groups them by difficulty, and orders groups by average price ascending and then difficulty. Counts are integers and rating/price aggregates are JSON numbers rounded to two decimal places.
+
+```json
+{
+  "data": {
+    "stats": [
+      {
+        "difficulty": "easy",
+        "num_tours": 2,
+        "num_ratings": 137,
+        "avg_rating": 4.75,
+        "avg_price": 525.5,
+        "min_price": 350,
+        "max_price": 701
+      }
+    ]
+  }
+}
+```
+
+When no tours qualify, `stats` is an empty array.
+
+### 7.3 Get a monthly tour plan
+
+```http
+GET /api/v1/tour-analytics/monthly-plan/{year}
+```
+
+`{year}` must contain exactly four digits and range from `1000` through `9999`. Invalid years return `422 Unprocessable Entity` with a validation error for `year`.
+
+The endpoint includes active departures from the inclusive start through the inclusive end of the requested UTC calendar year. Departures are grouped by numeric month. Groups are ordered by `num_tour_starts` descending and then month ascending. Tour names within a group follow departure datetime and ULID order. A tour name is repeated when that tour has multiple departures in the same month, matching the one-name-per-start behavior. Months without departures are omitted.
+
+```json
+{
+  "data": {
+    "plan": [
+      {
+        "month": 7,
+        "num_tour_starts": 3,
+        "tours": ["Forest Hiker", "Sea Explorer", "Forest Hiker"]
+      }
+    ]
+  }
+}
+```
+
+When no departures qualify, `plan` is an empty array.
+
+## 8. Errors and validation
 
 - Successful list and detail requests return `200 OK`.
 - Successful tour creation returns `201 Created`, a detail resource, and a `Location` header.
@@ -381,8 +447,9 @@ The server derives `tour_id` from the nested URL and manages identifiers and tim
 - PUT is not registered for tours and returns `405 Method Not Allowed`.
 - Missing parents, mismatched ownership, and unknown, malformed, or soft-deleted start dates return `404 Not Found`.
 - PUT is not registered for start dates and returns `405 Method Not Allowed`.
+- Invalid monthly-plan years return `422 Unprocessable Entity`.
 
-## 8. Routing and documentation
+## 9. Routing and documentation
 
 `routes/api.php` is the API version dispatcher. Version 1 routes are defined in `routes/api_v1.php` and mounted with the `v1` URL and route-name prefixes.
 
@@ -400,17 +467,20 @@ These tour and start-date routes are currently public:
 | `GET` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Retrieve an owned start date. |
 | `PATCH` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Partially update an owned start date. |
 | `DELETE` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Soft-delete an owned start date. |
+| `GET` | `/api/v1/tour-analytics/top-tours` | List the five top active tours. |
+| `GET` | `/api/v1/tour-analytics/stats` | Summarize highly rated active tours by difficulty. |
+| `GET` | `/api/v1/tour-analytics/monthly-plan/{year}` | Group active departures by month in a UTC year. |
 
 Scramble exposes version-specific OpenAPI documentation:
 
 - Interactive documentation: `/docs/v1`
 - OpenAPI document: `/docs/v1.json`
 - Documented server base path: `/api/v1`
-- Tour operations are grouped under `Tours`; start-date operations are grouped under `Tour Start Dates`.
+- Tour operations are grouped under `Tours`, start-date operations under `Tour Start Dates`, and analytics under `Tour Analytics`.
 
 The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so documentation cannot mix API versions.
 
-## 9. Development data
+## 10. Development data
 
 The development seeder creates 20 tours, each with between three and five start dates. It runs only in the `local` environment.
 
@@ -426,7 +496,7 @@ Tour factory data follows these rules:
 
 Generated start dates occur from 1 to 180 days in the future, use UTC, add a randomized daytime hour and either zero or 30 minutes, and are active about 90% of the time.
 
-## 10. Acceptance and verification
+## 11. Acceptance and verification
 
 Feature coverage must verify:
 
@@ -450,6 +520,9 @@ Feature coverage must verify:
 - Start-date validation for invalid or missing datetimes, capacity, unknown/read-only fields, empty PATCH, and PUT.
 - UTC-equivalent duplicate prevention, including soft-deleted records, and database race protection.
 - Rejection of tour capacity reductions below existing start-date availability.
+- Fixed top-tour limits, fieldsets, null placement, ordering, and active-only visibility.
+- Tour-stat grouping, thresholds, aggregate values, numeric normalization, ordering, and empty results.
+- Monthly-plan UTC boundaries, grouping, repeated names, deterministic ordering, historical dates, visibility exclusions, year validation, and empty results.
 
 Use the following commands during verification:
 
@@ -460,7 +533,7 @@ php artisan scramble:analyze --api=v1
 php artisan scramble:export --api=v1
 ```
 
-## 11. Deferred scope
+## 12. Deferred scope
 
 The following capabilities are intentionally not part of the current public contract and must be specified before implementation:
 

@@ -6,6 +6,7 @@ use App\Http\Requests\Api\V1\StoreTourRequest;
 use App\Http\Requests\Api\V1\StoreTourStartDateRequest;
 use App\Http\Requests\Api\V1\UpdateTourRequest;
 use App\Http\Requests\Api\V1\UpdateTourStartDateRequest;
+use App\Http\Resources\TopTourResource;
 use App\OpenApi\Types\StrictObjectType;
 use Dedoc\Scramble\Contracts\DocumentTransformer;
 use Dedoc\Scramble\OpenApiContext;
@@ -20,6 +21,7 @@ final class ConfigureTourWriteSchemas implements DocumentTransformer
         $this->makeRequestSchemaStrict($document, UpdateTourRequest::class, minimumProperties: 1);
         $this->makeRequestSchemaStrict($document, StoreTourStartDateRequest::class);
         $this->makeRequestSchemaStrict($document, UpdateTourStartDateRequest::class, minimumProperties: 1);
+        $this->requireTopTourAttributes($document);
 
         foreach ($document->paths as $path) {
             foreach ($path->operations as $operation) {
@@ -30,6 +32,28 @@ final class ConfigureTourWriteSchemas implements DocumentTransformer
                     $operation->requestBodyObject?->required();
                 }
             }
+        }
+    }
+
+    private function requireTopTourAttributes(OpenApi $document): void
+    {
+        $schema = $document->components->schemas[class_basename(TopTourResource::class)] ?? null;
+
+        if (! $schema?->type instanceof ObjectType) {
+            return;
+        }
+
+        $schema->type->addRequired(['attributes']);
+        $attributes = $schema->type->getProperty('attributes');
+
+        if ($attributes instanceof ObjectType) {
+            $attributes->setRequired([
+                'name',
+                'price',
+                'rating_avg',
+                'summary',
+                'difficulty',
+            ]);
         }
     }
 
