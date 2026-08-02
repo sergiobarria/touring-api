@@ -9,6 +9,8 @@ use Illuminate\Support\ServiceProvider;
 
 final class RateLimitServiceProvider extends ServiceProvider
 {
+    private const int ACCOUNT_UPDATE_REQUESTS_PER_MINUTE = 10;
+
     private const int AUTHENTICATED_REQUESTS_PER_MINUTE = 120;
 
     private const int EMAIL_VERIFICATION_REQUESTS_PER_MINUTE = 6;
@@ -65,6 +67,12 @@ final class RateLimitServiceProvider extends ServiceProvider
             'email-verification',
             fn (Request $request): Limit => Limit::perMinute(self::EMAIL_VERIFICATION_REQUESTS_PER_MINUTE)
                 ->by($request->user()?->getAuthIdentifier() ?? $request->ip()),
+        );
+
+        RateLimiter::for(
+            'account-update',
+            fn (Request $request): Limit => Limit::perMinute(self::ACCOUNT_UPDATE_REQUESTS_PER_MINUTE)
+                ->by((string) $request->user()?->getAuthIdentifier()),
         );
     }
 }

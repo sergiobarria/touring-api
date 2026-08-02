@@ -19,7 +19,8 @@ Route::prefix('auth')
         Route::get('email/verify/{user}/{hash}', 'verifyEmail')->middleware(['signed', 'throttle:email-verification', 'no-store'])->name('verification.verify');
         Route::post('email/verification-notification', 'sendEmailVerification')->middleware(['auth:sanctum', 'throttle:email-verification', 'no-store'])->name('verification.send');
         Route::get('me', 'me')->middleware(['auth:sanctum', 'no-store'])->name('me');
-        Route::put('password', 'updatePassword')->middleware(['auth:sanctum', 'no-store'])->name('password.update');
+        Route::patch('me', 'updateProfile')->middleware(['auth:sanctum', 'throttle:account-update', 'no-store'])->name('me.update');
+        Route::put('password', 'updatePassword')->middleware(['auth:sanctum', 'throttle:account-update', 'no-store'])->name('password.update');
         Route::post('logout', 'logout')->middleware('auth:sanctum')->name('logout');
     });
 

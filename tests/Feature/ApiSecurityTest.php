@@ -27,6 +27,7 @@ it('configures global and authentication rate limiters', function () {
     $passwordEmailLimit = $rateLimiter->limiter('password-email')($guestRequest);
     $passwordResetLimit = $rateLimiter->limiter('password-reset')($guestRequest);
     $emailVerificationLimit = $rateLimiter->limiter('email-verification')($guestRequest);
+    $accountUpdateLimit = $rateLimiter->limiter('account-update')($authenticatedRequest);
 
     expect($guestLimit->maxAttempts)->toBe(60)
         ->and($guestLimit->decaySeconds)->toBe(60)
@@ -44,6 +45,8 @@ it('configures global and authentication rate limiters', function () {
         ->and($passwordResetLimit->key)->toBe('192.0.2.10')
         ->and($emailVerificationLimit->maxAttempts)->toBe(6)
         ->and($emailVerificationLimit->key)->toBe('192.0.2.10')
+        ->and($accountUpdateLimit->maxAttempts)->toBe(10)
+        ->and($accountUpdateLimit->key)->toBe($user->id)
         ->and(config('cache.limiter'))->toBeNull();
 });
 

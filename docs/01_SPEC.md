@@ -42,7 +42,7 @@ Local development runs Laravel's scheduler through `composer run dev`. Productio
 
 ### 2.2 API security baseline
 
-Every versioned API route uses a named global rate limiter. Guests receive 60 requests per minute per IP address. Authenticated requests receive 120 requests per minute per user ULID; the authenticated identity takes precedence over the request IP. Registration additionally allows five requests per minute per IP, login allows 30 requests per minute per IP, and email-verification requests allow six requests per minute per authenticated user ULID or guest IP. Endpoint-specific limits are cumulative with the global limit. Login's separate five-failed-credential lockout remains keyed by normalized email and IP so request-volume protection does not weaken brute-force protection.
+Every versioned API route uses a named global rate limiter. Guests receive 60 requests per minute per IP address. Authenticated requests receive 120 requests per minute per user ULID; the authenticated identity takes precedence over the request IP. Registration additionally allows five requests per minute per IP, login allows 30 requests per minute per IP, email-verification requests allow six requests per minute per authenticated user ULID or guest IP, and password/profile updates share a limit of ten attempts per minute per authenticated user ULID. Endpoint-specific limits are cumulative with the global limit. Login's separate five-failed-credential lockout remains keyed by normalized email and IP so request-volume protection does not weaken brute-force protection.
 
 Rate-limit counters use the cache store named by `RATE_LIMITER_STORE`. The example environment uses the database store, while automated tests omit the setting and fall back to their default array cache. Production should set `RATE_LIMITER_STORE=redis` when Redis is available so counters are shared efficiently by every application instance.
 
@@ -169,6 +169,12 @@ Administrative creation requires `name`, normalized `email`, `password`, `passwo
 
 Role replacement and deletion are forbidden for the currently authenticated administrator's own account. This prevents the active administrator from accidentally removing their own management access. Deletion is permanent and atomically removes the user's Sanctum tokens, password-reset token, sessions, and role assignment before deleting the account.
 
+### 3.9 Self-service profiles
+
+Account identity remains on the `users` table because the current editable fields are only `name` and `email`; a separate one-to-one profile record would add lifecycle and consistency overhead without storing distinct profile-domain data. A profile table should be introduced later only when fields such as biography, avatar preferences, locale, or guide-specific public information establish a meaningful independent profile boundary.
+
+Every authenticated role can update its own name or email. Name changes do not require password confirmation. Email changes require `current_password`, normalize the new address, enforce uniqueness, clear `email_verified_at`, and invalidate password-reset tokens for both the old and new addresses atomically before queuing a new verification notification after commit. Submitting the same normalized email leaves verification unchanged. Password changes remain isolated on `PUT /api/v1/auth/password` and are not accepted by the profile endpoint. Password and profile updates share the named account-update limiter to constrain current-password guessing with a compromised token.
+
 ## 4. Public API conventions
 
 ### 4.1 JSON:API resource types
@@ -284,7 +290,9 @@ Logout requires `auth:sanctum`, deletes the current token, and returns `204 No C
 
 - `GET /api/v1/auth/me` requires `auth:sanctum` and is available to every role.
 - It returns the authenticated user's name, email, sole role, and email-verification timestamp without requiring an administrative permission.
-- The response is non-cacheable. Extended profile fields and profile updates remain deferred to the profile phase.
+- The response is non-cacheable. Extended profile-domain fields remain deferred.
+- `PATCH /api/v1/auth/me` accepts `name`, `email`, and conditionally `current_password`; at least one of `name` or `email` is required.
+- Changing email requires the current password and starts email verification again. The endpoint never changes roles or passwords.
 
 ## 5. Tour endpoints
 
@@ -697,6 +705,7 @@ The authenticated routes are:
 | --- | --- | --- | --- |
 | `POST` | `/api/v1/auth/logout` | `auth:sanctum` | Revoke the current Bearer token. |
 | `GET` | `/api/v1/auth/me` | `auth:sanctum` | Return the authenticated user's account profile and role. |
+| `PATCH` | `/api/v1/auth/me` | `auth:sanctum` | Update the authenticated user's name or email. |
 | `POST` | `/api/v1/auth/email/verification-notification` | `auth:sanctum` | Queue another verification email when the account remains unverified. |
 | `PUT` | `/api/v1/auth/password` | `auth:sanctum` | Change the password and revoke every other API token. |
 | `GET` | `/api/v1/users` | `auth:sanctum`, `users.view-any` | List managed users. |

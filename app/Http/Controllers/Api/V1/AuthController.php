@@ -11,6 +11,7 @@ use App\Actions\Auth\SendPasswordResetLink;
 use App\Actions\Auth\UpdateUserPassword;
 use App\Actions\Auth\VerifyUserEmail;
 use App\Actions\Users\GetCurrentUser;
+use App\Actions\Users\UpdateCurrentUserProfile;
 use App\DataTransferObjects\AuthenticationResult;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ForgotPasswordRequest;
@@ -19,6 +20,7 @@ use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Http\Requests\Api\V1\ResetPasswordRequest;
 use App\Http\Requests\Api\V1\SendEmailVerificationRequest;
 use App\Http\Requests\Api\V1\UpdatePasswordRequest;
+use App\Http\Requests\Api\V1\UpdateProfileRequest;
 use App\Http\Resources\ManagedUserResource;
 use App\Http\Resources\UserResource;
 use App\Models\User;
@@ -89,6 +91,7 @@ class AuthController extends Controller
     /**
      * @throws Throwable
      */
+    #[Response(429, description: 'Too many account update attempts.', type: 'array{message: string}')]
     public function updatePassword(UpdatePasswordRequest $request, UpdateUserPassword $action): HttpResponse
     {
         $action->handle($request->user(), $request);
@@ -118,6 +121,18 @@ class AuthController extends Controller
         $user = $request->user();
 
         return ManagedUserResource::make($action->handle($user));
+    }
+
+    /**
+     * @throws Throwable
+     */
+    #[Response(429, description: 'Too many account update attempts.', type: 'array{message: string}')]
+    public function updateProfile(UpdateProfileRequest $request, UpdateCurrentUserProfile $action): ManagedUserResource
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        return ManagedUserResource::make($action->handle($user, $request));
     }
 
     private function authenticationResponse(AuthenticationResult $result, int $status = 200): JsonResponse
