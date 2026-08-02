@@ -15,6 +15,10 @@ final class RateLimitServiceProvider extends ServiceProvider
 
     private const int LOGIN_REQUESTS_PER_MINUTE = 30;
 
+    private const int PASSWORD_EMAIL_REQUESTS_PER_MINUTE = 5;
+
+    private const int PASSWORD_RESET_REQUESTS_PER_MINUTE = 5;
+
     private const int REGISTRATION_REQUESTS_PER_MINUTE = 5;
 
     public function boot(): void
@@ -40,6 +44,18 @@ final class RateLimitServiceProvider extends ServiceProvider
         RateLimiter::for(
             'login',
             fn (Request $request): Limit => Limit::perMinute(self::LOGIN_REQUESTS_PER_MINUTE)
+                ->by($request->ip()),
+        );
+
+        RateLimiter::for(
+            'password-email',
+            fn (Request $request): Limit => Limit::perMinute(self::PASSWORD_EMAIL_REQUESTS_PER_MINUTE)
+                ->by($request->ip()),
+        );
+
+        RateLimiter::for(
+            'password-reset',
+            fn (Request $request): Limit => Limit::perMinute(self::PASSWORD_RESET_REQUESTS_PER_MINUTE)
                 ->by($request->ip()),
         );
     }

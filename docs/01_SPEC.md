@@ -144,6 +144,14 @@ Application authorization checks capabilities rather than role names. The initia
 
 The first administrator is bootstrapped from an existing account with `php artisan users:promote-admin <user-ulid-or-email>`. Promotion replaces the existing role and does not create an account. Admin user-management HTTP endpoints and policies are deferred to the next phase.
 
+### 3.6 Password management and transactional email
+
+Password reset uses Laravel's database-backed password broker. Reset links hand off to `${FRONTEND_URL}/reset-password` with the one-time token and normalized email in the query string. Reset requests always return the same accepted response whether the account exists or not. A successful reset changes the password, rotates the remember token, and revokes every Sanctum token. Authenticated password changes require the current password and preserve only the Bearer token used for the request.
+
+Forgot-password and reset submissions each have an independent limit of five requests per IP per minute, separate from registration and login counters. Reset-link notifications are queued with encrypted job payloads, and Laravel's password broker time-boxes both known and unknown email requests to reduce account-enumeration signals. Expired reset tokens are cleared every fifteen minutes. Registration, login, forgot-password, reset-password, and authenticated password-change responses are not cacheable.
+
+Production email uses Laravel's Resend transport and requires `MAIL_MAILER=resend`, `RESEND_API_KEY`, a verified-domain `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`, canonical `APP_URL`, and `FRONTEND_URL`. Local development may retain `MAIL_MAILER=log`. Email verification remains deferred to the next account-security phase.
+
 ## 4. Public API conventions
 
 ### 4.1 JSON:API resource types
@@ -233,6 +241,12 @@ Authorization: Bearer <token>
 ```
 
 Logout requires `auth:sanctum`, deletes the current token, and returns `204 No Content`. Missing, malformed, expired, and previously revoked tokens return `401 Unauthorized`. Other tokens owned by the same user remain valid.
+
+#### Password reset and change
+
+- `POST /api/v1/auth/forgot-password` accepts only `email` and returns `202 Accepted` generically.
+- `POST /api/v1/auth/reset-password` accepts `email`, `token`, `password`, and `password_confirmation`; success returns `204 No Content` and revokes all tokens.
+- `PUT /api/v1/auth/password` requires `auth:sanctum` and accepts `current_password`, `password`, and `password_confirmation`; success returns `204 No Content`, preserves the current token, and revokes the user's other tokens.
 
 ## 5. Tour endpoints
 
@@ -585,6 +599,8 @@ When no departures qualify, `plan` is an empty array.
 
 - Successful registration and login return `201 Created` and `200 OK`, respectively, with the user resource and one-time plaintext token metadata.
 - Successful logout returns `204 No Content` and revokes only the current token.
+- Forgot-password requests return `202 Accepted` generically. Successful password resets and authenticated password changes return `204 No Content`.
+- Invalid reset credentials, incorrect current passwords, weak or unconfirmed passwords, and unsupported password fields return `422 Unprocessable Entity`.
 - Invalid authentication input, duplicate emails, and incorrect credentials return `422 Unprocessable Entity`; incorrect credentials never distinguish an unknown email from a wrong password.
 - Missing, malformed, expired, and revoked Bearer tokens return `401 Unauthorized` on protected endpoints.
 - Global API limits, authentication request ceilings, and failed-credential lockouts return `429 Too Many Requests` with retry information.
@@ -618,6 +634,8 @@ All routes in this table receive the global guest/IP rate limit. Tour mutations 
 | --- | --- | --- |
 | `POST` | `/api/v1/auth/register` | Create a user and issue an API token. |
 | `POST` | `/api/v1/auth/login` | Exchange credentials for an API token. |
+| `POST` | `/api/v1/auth/forgot-password` | Queue a password reset link without exposing account existence. |
+| `POST` | `/api/v1/auth/reset-password` | Reset a password using a broker token and revoke all API tokens. |
 | `GET` | `/api/v1/tours` | List active tours. |
 | `POST` | `/api/v1/tours` | Create a tour. |
 | `GET` | `/api/v1/tours/{tour}` | Retrieve one active tour by ULID. |
@@ -639,6 +657,7 @@ The authenticated routes are:
 | Method | URI | Middleware | Purpose |
 | --- | --- | --- | --- |
 | `POST` | `/api/v1/auth/logout` | `auth:sanctum` | Revoke the current Bearer token. |
+| `PUT` | `/api/v1/auth/password` | `auth:sanctum` | Change the password and revoke every other API token. |
 
 Scramble exposes version-specific OpenAPI documentation:
 
@@ -753,7 +772,7 @@ The following capabilities are intentionally not part of the current public cont
 
 - Restoring soft-deleted tours or start dates.
 - Admin user-management endpoints, resource authorization policies, granular token abilities, and protection of tour endpoints.
-- Email verification, password reset, refresh tokens, token listing, and revoke-all workflows.
+- Email verification, refresh tokens, token listing, and user-initiated revoke-all workflows.
 - Client-controlled image reordering.
 - Direct or presigned uploads and queued image conversions.
 - Reviews and rating submission.

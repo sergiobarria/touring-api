@@ -13,6 +13,9 @@ Route::prefix('auth')
     ->group(function (): void {
         Route::post('register', 'register')->middleware(['throttle:registration', 'no-store'])->name('register');
         Route::post('login', 'login')->middleware(['throttle:login', 'no-store'])->name('login');
+        Route::post('forgot-password', 'forgotPassword')->middleware(['throttle:password-email', 'no-store'])->name('password.email');
+        Route::post('reset-password', 'resetPassword')->middleware(['throttle:password-reset', 'no-store'])->name('password.reset');
+        Route::put('password', 'updatePassword')->middleware(['auth:sanctum', 'no-store'])->name('password.update');
         Route::post('logout', 'logout')->middleware('auth:sanctum')->name('logout');
     });
 

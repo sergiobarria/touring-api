@@ -5,10 +5,16 @@ namespace App\Http\Controllers\Api\V1;
 use App\Actions\Auth\LoginUser;
 use App\Actions\Auth\LogoutUser;
 use App\Actions\Auth\RegisterUser;
+use App\Actions\Auth\ResetUserPassword;
+use App\Actions\Auth\SendPasswordResetLink;
+use App\Actions\Auth\UpdateUserPassword;
 use App\DataTransferObjects\AuthenticationResult;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\ForgotPasswordRequest;
 use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
+use App\Http\Requests\Api\V1\ResetPasswordRequest;
+use App\Http\Requests\Api\V1\UpdatePasswordRequest;
 use App\Http\Resources\UserResource;
 use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\Response;
@@ -50,6 +56,27 @@ class AuthController extends Controller
     public function logout(Request $request, LogoutUser $logoutUser): HttpResponse
     {
         $logoutUser->handle($request);
+
+        return response()->noContent();
+    }
+
+    public function forgotPassword(ForgotPasswordRequest $request, SendPasswordResetLink $action): JsonResponse
+    {
+        $action->handle($request);
+
+        return response()->json(['message' => 'If an account exists, a password reset link has been sent.'], 202);
+    }
+
+    public function resetPassword(ResetPasswordRequest $request, ResetUserPassword $action): HttpResponse
+    {
+        $action->handle($request);
+
+        return response()->noContent();
+    }
+
+    public function updatePassword(UpdatePasswordRequest $request, UpdateUserPassword $action): HttpResponse
+    {
+        $action->handle($request->user(), $request);
 
         return response()->noContent();
     }

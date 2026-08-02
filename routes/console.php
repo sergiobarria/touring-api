@@ -12,5 +12,6 @@ Artisan::command('inspire', function () {
 
 Schedule::command('telescope:prune')->daily();
 Schedule::command('sanctum:prune-expired --hours=24')->daily();
+Schedule::command('auth:clear-resets')->everyFifteenMinutes();
 Schedule::command(RunHealthChecksCommand::class)->everyMinute()->withoutOverlapping();
 Schedule::command('model:prune', ['--model' => HealthCheckResultHistoryItem::class])->daily();
