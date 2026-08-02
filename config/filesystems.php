@@ -41,7 +41,7 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => env('APP_URL') . '/storage',
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
@@ -66,11 +66,12 @@ return [
             'secret' => env('R2_SECRET_ACCESS_KEY'),
             'region' => env('R2_REGION', 'auto'),
             'bucket' => env('R2_BUCKET'),
-            'endpoint' => env('R2_ENDPOINT'),
             'url' => env('R2_URL'),
-            'use_path_style_endpoint' => env('R2_USE_PATH_STYLE_ENDPOINT', false),
-            'visibility' => 'public',
-        ]
+            'endpoint' => env('R2_ENDPOINT'),
+            'use_path_style_endpoint' => false,
+            'throw' => true,
+            'report' => true,
+        ],
 
     ],
 

@@ -2,130 +2,112 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Data\StoreTourData;
-use App\Data\TourData;
-use App\Data\TourListData;
-use App\Data\UpdateTourData;
+use App\Actions\Tours\CreateTour;
+use App\Actions\Tours\DeleteTour;
+use App\Actions\Tours\ListTours;
+use App\Actions\Tours\ShowTour;
+use App\Actions\Tours\UpdateTour;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\TourListRequest;
-use App\Models\Tour;
+use App\Http\Requests\Api\V1\StoreTourRequest;
+use App\Http\Requests\Api\V1\TourListRequest;
+use App\Http\Requests\Api\V1\UpdateTourRequest;
+use App\Http\Resources\TourListResource;
+use App\Http\Resources\TourResource;
 use Dedoc\Scramble\Attributes\Group;
-use Exception;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
-use Log;
-use Spatie\QueryBuilder\AllowedFilter;
-use Spatie\QueryBuilder\QueryBuilder;
+use Dedoc\Scramble\Attributes\Header;
+use Dedoc\Scramble\Attributes\QueryParameter;
+use Dedoc\Scramble\Attributes\Response;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response as HttpResponse;
 use Throwable;
 
 #[Group('Tours')]
 class TourController extends Controller
 {
-    /** List tours. */
-    public function index(TourListRequest $request)
+    /**
+     * List all tours.
+     *
+     * Browse the active tours catalog with sparse fields and optional start dates.
+     */
+    #[QueryParameter(
+        'sort',
+        description: 'Comma-separated sort fields. Prefix a field with "-" for descending order. Allowed fields: name, price, max_group_size, duration_days, created_at.',
+        type: 'string',
+        example: '-price,name',
+    )]
+    public function index(TourListRequest $request, ListTours $action): AnonymousResourceCollection
     {
-        $tours = QueryBuilder::for(Tour::class)
-            ->with('media')
-            ->allowedFields(Tour::ALLOWED_SELECT_FIELDS)
-            ->allowedIncludes(Tour::ALLOWED_INCLUDES)
-            ->allowedSorts(Tour::ALLOWED_SORTS)
-            ->allowedFilters([
-                'name', 'slug', 'difficulty',
-                AllowedFilter::exact('duration_days'),
-                AllowedFilter::exact('max_group_size'),
-                AllowedFilter::scope('min_price'),
-                AllowedFilter::scope('max_price'),
-            ])
-            ->where('is_active', true)
-            ->defaultSort(['created_at', 'name'])
-            ->paginate();
-
-        return TourListData::collect($tours);
+        return TourListResource::collection($action->handle(
+            perPage: $request->integer('per_page', 15),
+            page: $request->integer('page', 1),
+        ));
     }
 
-    /** Get Tour by ID. */
-    public function show(string $id)
-    {
-        $tour = Tour::with('dates')->findOrFail($id);
-
-        return TourData::from($tour);
-    }
-
-    /** Create a tour
+    /**
+     * Create a tour.
+     *
+     * Create a tour from validated catalog data. Slugs and ratings are server-managed.
+     *
      * @throws Throwable
      */
-    public function store(StoreTourData $data)
+    #[Response(
+        201,
+        description: 'Tour created.',
+        mediaType: 'application/vnd.api+json',
+        type: TourResource::class,
+    )]
+    #[Header(
+        'Location',
+        description: 'URL of the created tour.',
+        type: 'string',
+        format: 'uri',
+        required: true,
+        status: 201,
+    )]
+    public function store(StoreTourRequest $request, CreateTour $action): JsonResponse
     {
-        return DB::transaction(function () use ($data) {
-            $tour = Tour::create($data->except('images')->toArray());
+        $tour = $action->handle($request->toDto(), $request->validated('guide_ids', []));
 
-            $errors = [];
-            if ($data->images) {
-                foreach ($data->images as $index => $image) {
-                    try {
-                        $tour->addMedia($image)->toMediaCollection('tours', 'r2');
-                    } catch (Exception $e) {
-                        Log::error("Failed to upload image for Tour {$tour->id} : {$e->getMessage()}");
-                        $errors["images.{$index}"] = "Failed to upload image: " . $e->getMessage();
-                    }
-                }
-            }
-
-            if (!empty($errors)) {
-                throw ValidationException::withMessages($errors);
-            }
-
-            $tour->refresh();
-
-            return TourData::from($tour)->toResponse(request())->setStatusCode(201);
-        });
+        return TourResource::make($tour)
+            ->response()
+            ->setStatusCode(201)
+            ->header('Location', route('v1.tours.show', $tour));
     }
 
-    /** Update tour
+    /**
+     * Show an active tour.
+     *
+     * Retrieve a tour by ULID with optional start dates and sparse fields.
+     */
+    #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
+    public function show(string $tour, ShowTour $action): TourResource
+    {
+        return TourResource::make($action->handle($tour));
+    }
+
+    /**
+     * Update a tour.
+     *
+     * Partially update an active or inactive tour by ULID.
+     *
      * @throws Throwable
      */
-    public function update(UpdateTourData $data, Tour $tour)
+    #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
+    public function update(UpdateTourRequest $request, string $tour, UpdateTour $action): TourResource
     {
-        return DB::transaction(function () use ($data, $tour) {
-            $tour->update($data->except('add_images', 'remove_image_ids')->toArray());
-
-            $errors = [];
-
-            if ($data->add_images) {
-                foreach ($data->add_images as $index => $imageFile) {
-                    try {
-                        $tour->addMedia($imageFile)
-                            ->toMediaCollection('images', 'r2');
-                    } catch (Exception $e) {
-                        Log::error("Failed to add image for Tour {$tour->id} (index {$index}): " . $e->getMessage());
-                        $errors["add_images.{$index}"] = "Failed to add image: " . $e->getMessage();
-                    }
-                }
-            }
-
-            if ($data->remove_image_ids) {
-                try {
-                    $tour->media()->whereIn('id', $data->remove_image_ids)->delete();
-                } catch (Exception $e) {
-                    Log::error("Failed to delete images for Tour {$tour->id}: " . $e->getMessage());
-                    throw ValidationException::withMessages(['remove_image_ids' => "Error deleting images: " . $e->getMessage()]);
-                }
-            }
-
-            if (!empty($errors)) {
-                throw ValidationException::withMessages($errors);
-            }
-
-            $tour->refresh();
-
-            return TourData::from($tour)->toResponse(request());
-        });
+        return TourResource::make($action->handle($tour, $request));
     }
 
-    /** Delete tour */
-    public function destroy(Tour $tour)
+    /**
+     * Delete a tour.
+     *
+     * Soft-delete a tour by ULID while preserving all of its start dates.
+     */
+    #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
+    public function destroy(string $tour, DeleteTour $action): HttpResponse
     {
-        $tour->delete();
+        $action->handle($tour);
 
         return response()->noContent();
     }

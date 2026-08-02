@@ -1,5 +1,12 @@
 <?php
 
+use App\Enums\UserRole;
+use App\Models\User;
+use App\Services\Users\UserRoleService;
+use Database\Seeders\PermissionSeeder;
+use Database\Seeders\RoleSeeder;
+use Tests\TestCase;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -7,12 +14,12 @@
 |
 | The closure you provide to your test functions is always bound to a specific PHPUnit test
 | case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "pest()" function to bind a different classes or traits.
+| need to change it using the "pest()" function to bind different classes or traits.
 |
 */
 
-pest()->extend(Tests\TestCase::class)
- // ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->extend(TestCase::class)
+ // ->use(RefreshDatabase::class)
     ->in('Feature');
 
 /*
@@ -41,7 +48,19 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+function tourUserWithRole(UserRole $role): User
 {
-    // ..
+    $user = User::factory()->create();
+    app(UserRoleService::class)->assign($user, $role);
+
+    return $user;
+}
+
+function authenticateTourAdmin(): User
+{
+    test()->seed([PermissionSeeder::class, RoleSeeder::class]);
+    $admin = tourUserWithRole(UserRole::ADMIN);
+    test()->actingAs($admin);
+
+    return $admin;
 }

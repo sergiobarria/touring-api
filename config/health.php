@@ -1,5 +1,10 @@
 <?php
 
+use App\Models\HealthCheckResultHistoryItem;
+use Spatie\Health\Notifications\CheckFailedNotification;
+use Spatie\Health\Notifications\Notifiable;
+use Spatie\Health\ResultStores\EloquentHealthResultStore;
+
 return [
     /*
      * A result store is responsible for saving the results of the checks. The
@@ -7,10 +12,10 @@ return [
      * can use multiple stores at the same time.
      */
     'result_stores' => [
-        Spatie\Health\ResultStores\EloquentHealthResultStore::class => [
+        EloquentHealthResultStore::class => [
             'connection' => env('HEALTH_DB_CONNECTION', env('DB_CONNECTION')),
-            'model' => Spatie\Health\Models\HealthCheckResultHistoryItem::class,
-            'keep_history_for_days' => 5,
+            'model' => HealthCheckResultHistoryItem::class,
+            'keep_history_for_days' => 7,
         ],
 
         /*
@@ -35,17 +40,17 @@ return [
         /*
          * Notifications will only get sent if this option is set to `true`.
          */
-        'enabled' => true,
+        'enabled' => false,
 
         'notifications' => [
-            Spatie\Health\Notifications\CheckFailedNotification::class => ['mail'],
+            CheckFailedNotification::class => ['mail'],
         ],
 
         /*
          * Here you can specify the notifiable to which the notifications should be sent. The default
          * notifiable will use the variables specified in this config file.
          */
-        'notifiable' => Spatie\Health\Notifications\Notifiable::class,
+        'notifiable' => Notifiable::class,
 
         /*
          * When checks start failing, you could potentially end up getting
@@ -57,8 +62,14 @@ return [
         'throttle_notifications_for_minutes' => 60,
         'throttle_notifications_key' => 'health:latestNotificationSentAt:',
 
+        /*
+         * When set to true, notifications will only be sent when at least one
+         * check has a 'failed' status. Warnings will be ignored.
+         */
+        'only_on_failure' => false,
+
         'mail' => [
-            'to' => 'your@example.com',
+            'to' => env('HEALTH_TO_ADDRESS', ''),
 
             'from' => [
                 'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
@@ -92,7 +103,7 @@ return [
          * When this option is enabled, the checks will run before sending a response.
          * Otherwise, we'll send the results from the last time the checks have run.
          */
-        'always_send_fresh_results' => true,
+        'always_send_fresh_results' => false,
 
         /*
          * The secret that is displayed at the Application Health settings at Oh Dear.
@@ -111,7 +122,7 @@ return [
      * This way you can get notified if Horizon goes down.
      */
     'horizon' => [
-        'heartbeat_url' => env('HORIZON_HEARTBEAT_URL', null),
+        'heartbeat_url' => env('HORIZON_HEARTBEAT_URL'),
     ],
 
     /*
@@ -120,7 +131,7 @@ return [
      * This way you can get notified if the schedule fails to run.
      */
     'schedule' => [
-        'heartbeat_url' => env('SCHEDULE_HEARTBEAT_URL', null),
+        'heartbeat_url' => env('SCHEDULE_HEARTBEAT_URL'),
     ],
 
     /*
@@ -132,7 +143,7 @@ return [
     'theme' => 'light',
 
     /*
-     * When enabled,  completed `HealthQueueJob`s will be displayed
+     * When enabled, completed `HealthQueueJob`s will be displayed
      * in Horizon's silenced jobs screen.
      */
     'silence_health_queue_job' => true,
@@ -146,7 +157,7 @@ return [
     /*
      * You can specify a secret token that needs to be sent in the X-Secret-Token for secured access.
      */
-    'secret_token' => env('HEALTH_SECRET_TOKEN') ?? null,
+    'secret_token' => env('HEALTH_SECRET_TOKEN'),
 
 /**
  * By default, conditionally skipped health checks are treated as failures.

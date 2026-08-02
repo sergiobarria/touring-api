@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Enums\UserRole;
 use App\Models\Tour;
-use App\Models\TourDate;
+use App\Models\TourStartDate;
+use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 
 class TourSeeder extends Seeder
 {
@@ -15,35 +15,18 @@ class TourSeeder extends Seeder
      */
     public function run(): void
     {
-        $imageDir = base_path('public/assets/tours');
-        $tourImages = collect(File::files($imageDir))
-            ->map(fn($file) => $file->getPathname())
-            ->values();
+        $datesNum = rand(3, 5);
+        $leadGuides = User::role(UserRole::LEAD_GUIDE->value)->get();
+        $guides = User::role(UserRole::GUIDE->value)->get();
 
-        if ($tourImages->isEmpty()) {
-            $this->command->warn("No images found in " . $imageDir);
-            return;
-        }
-
-        Tour::factory(20)->create()->each(function (Tour $tour) use ($tourImages) {
-            // Upload images
-            $numOfImages = rand(1, 2);
-            $images = $tourImages->random($numOfImages);
-            foreach ($images as $image) {
-                $originalExtension = File::extension($image);
-                $fileName = Str::random(10) . '.' . $originalExtension;
-
-                $tour->addMedia($image)
-                    ->preservingOriginal()
-                    ->usingFileName($fileName)
-                    ->toMediaCollection('tours');
-
-                $this->command->info("Tour {$tour->name} created with image {$image}");
-            }
-
-            $tour->dates()->saveMany(
-                TourDate::factory()->count(rand(3, 5))->make()
-            );
-        });
+        Tour::factory()->count(20)
+            ->state(fn (): array => ['lead_guide_id' => $leadGuides->random()->getKey()])
+            ->withImages()
+            ->has(TourStartDate::factory()->count($datesNum), 'startDates')
+            ->create()
+            ->each(function (Tour $tour) use ($guides): void {
+                $count = fake()->numberBetween(0, Tour::MAX_SUPPORTING_GUIDES);
+                $tour->guides()->sync($count === 0 ? [] : $guides->random($count)->modelKeys());
+            });
     }
 }

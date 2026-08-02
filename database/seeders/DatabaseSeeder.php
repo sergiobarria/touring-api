@@ -4,8 +4,6 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-
 class DatabaseSeeder extends Seeder
 {
     /**
@@ -15,14 +13,17 @@ class DatabaseSeeder extends Seeder
     {
         // Call seeders needed in all environments
         $this->call([
-            // ...
+            PermissionSeeder::class,
+            RoleSeeder::class,
         ]);
 
         // Call seeders needed only in development
-        if (app()->environment() == 'local') {
+        if (app()->environment('local')) {
             $this->call([
-                TourSeeder::class
-                // other development seeders...
+                TourGuideSeeder::class,
+                UserSeeder::class,
+                TourSeeder::class,
+                ReviewSeeder::class,
             ]);
         }
     }

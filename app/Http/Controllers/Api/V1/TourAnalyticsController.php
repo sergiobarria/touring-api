@@ -2,88 +2,63 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Data\TourListData;
+use App\Actions\TourAnalytics\GetMonthlyTourPlan;
+use App\Actions\TourAnalytics\GetTourStatistics;
+use App\Actions\TourAnalytics\ListTopTours;
 use App\Http\Controllers\Controller;
-use App\Models\Tour;
+use App\Http\Requests\Api\V1\MonthlyTourPlanRequest;
+use App\Http\Resources\TopTourResource;
 use Dedoc\Scramble\Attributes\Group;
+use Dedoc\Scramble\Attributes\PathParameter;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Spatie\QueryBuilder\QueryBuilder;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
-#[Group('Tours')]
+#[Group('Tour Analytics')]
 class TourAnalyticsController extends Controller
 {
-    /** Get top 5 tours */
-    public function getTopTours()
+    /**
+     * List the top tours.
+     *
+     * Return up to five active tours ordered by rating and price.
+     */
+    public function topTours(ListTopTours $action): AnonymousResourceCollection
     {
-        $tours = QueryBuilder::for(Tour::class)
-            ->select('id', 'name', 'price', 'rating_avg', 'summary', 'difficulty')
-            ->orderByDesc('rating_avg')
-            ->orderBy('price')
-            ->limit(5)
-            ->get();
-
-        return TourListData::collect($tours);
+        return TopTourResource::collection($action->handle());
     }
 
-    /** Get tours stats */
-    public function getTourStats()
+    /**
+     * Get tour statistics.
+     *
+     * Summarize highly rated active tours by difficulty.
+     */
+    public function stats(GetTourStatistics $action): JsonResponse
     {
-        $stats = Tour::query()
-            ->select(
-                DB::raw("UPPER(difficulty) as id"),
-                DB::raw("COUNT(*) as num_tours"),
-                DB::raw("SUM(rating_count) as num_ratings"),
-                DB::raw("AVG(rating_avg) as rating_avg"),
-                DB::raw("AVG(price) as avg_price"),
-                DB::raw("MIN(price) as min_price"),
-                DB::raw("MAX(price) as max_price"),
-            )
-            ->where('rating_avg', '>', 4.5)
-            ->groupBy('difficulty')
-            ->orderBy('avg_price', 'asc')
-            ->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => $stats
-        ]);
+        return response()->json(['data' => ['stats' => $action->handle()]]);
     }
 
-    /** Get tour monthly planning */
-    public function getMonthlyPlan(Request $request, int $year): JsonResponse
-    {
-        $request->validate([
-            'year' => ['required', 'integer', 'min:1900', 'max:2100']
-        ]);
-
-        $plan = Tour::query()
-            ->select(
-                DB::raw("EXTRACT(MONTH FROM tour_dates.start_datetime_utc) as month"),
-                DB::raw("COUNT(tour_dates.id) as num_tour_starts"),
-                DB::raw("STRING_AGG(tours.name, ',') as tours_names")
-            )
-            ->join('tour_dates', 'tours.id', '=', 'tour_dates.tour_id')
-            ->whereBetween('tour_dates.start_datetime_utc', [
-                "{$year}-01-01 00:00:00",
-                "{$year}-12-31 23:59:59"
-            ])
-            ->groupBy(DB::raw('EXTRACT(MONTH FROM tour_dates.start_datetime_utc)'))
-            ->orderBy('num_tour_starts', 'asc')
-            ->limit(12)
-            ->get();
-
-        $plan->transform(function ($item) {
-            $item->month = (int)$item->month;
-            $item->tours = $item->tours_names ? explode(',', $item->tours_names) : [];
-            unset($item->tours_names);
-            return $item;
-        });
-
+    /**
+     * Get a monthly tour plan.
+     *
+     * Group active tour departures in a UTC calendar year by month.
+     */
+    #[PathParameter(
+        'year',
+        description: 'Four-digit UTC calendar year from 1000 through 9999.',
+        type: 'integer',
+        infer: false,
+        example: 2026,
+    )]
+    #[Response(
+        200,
+        type: 'array{data: array{plan: list<array{month: int, num_tour_starts: int, tours: list<string>}>}}',
+    )]
+    public function monthlyPlan(
+        MonthlyTourPlanRequest $request,
+        GetMonthlyTourPlan $action,
+    ): JsonResponse {
         return response()->json([
-            'success' => true,
-            'data' => $plan
+            'data' => ['plan' => $action->handle((int) $request->validated('year'))],
         ]);
     }
 }

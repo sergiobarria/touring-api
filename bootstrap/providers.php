@@ -1,6 +1,11 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\HealthServiceProvider;
+use App\Providers\RateLimitServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\HealthServiceProvider::class,
+    AppServiceProvider::class,
+    HealthServiceProvider::class,
+    RateLimitServiceProvider::class,
 ];
