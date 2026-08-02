@@ -3,14 +3,13 @@
 namespace App\Services\Tours;
 
 use App\Models\Tour;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
-use OwenIt\Auditing\Models\Audit;
+use App\Services\Auditing\AuditService;
 use Throwable;
 
 final readonly class TourGuideService
 {
+    public function __construct(private AuditService $audits) {}
+
     /**
      * Replace a tour's supporting guides and record the relationship change.
      *
@@ -29,27 +28,11 @@ final readonly class TourGuideService
 
         $tour->guides()->sync($newGuideIds);
 
-        if (! config('audit.enabled', true)) {
-            return;
-        }
-
-        $user = Auth::user();
-        $request = app()->bound('request') ? app(Request::class) : null;
-
-        Audit::query()->create([
-            'user_type' => $user?->getMorphClass(),
-            'user_id' => $user?->getAuthIdentifier(),
-            'event' => 'updated',
-            'auditable_type' => $tour->getMorphClass(),
-            'auditable_id' => $tour->getKey(),
-            'old_values' => ['guide_ids' => $oldGuideIds],
-            'new_values' => ['guide_ids' => $newGuideIds],
-            'url' => $request?->fullUrl(),
-            'ip_address' => $request?->ip(),
-            'user_agent' => ($userAgent = $request?->userAgent()) !== null
-                ? Str::limit($userAgent, 1023, '')
-                : null,
-            'tags' => 'guide-assignments',
-        ]);
+        $this->audits->record(
+            $tour,
+            ['guide_ids' => $oldGuideIds],
+            ['guide_ids' => $newGuideIds],
+            'guide-assignments',
+        );
     }
 }

@@ -60,6 +60,7 @@ it('keeps catalog reads public while protecting writes and analytics', function 
 });
 
 it('creates and atomically replaces a valid guide team', function () {
+    config()->set('audit.console', true);
     $this->actingAs(tourUserWithRole(UserRole::ADMIN));
     $lead = tourUserWithRole(UserRole::LEAD_GUIDE);
     $replacementLead = tourUserWithRole(UserRole::LEAD_GUIDE);

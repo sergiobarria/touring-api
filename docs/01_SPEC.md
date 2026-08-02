@@ -20,7 +20,7 @@ The current implementation provides Sanctum API-token authentication, email veri
 - UTC is the canonical timezone for storing, comparing, generating, testing, and transmitting timestamps.
 - API timestamps use ISO 8601 with an explicit UTC offset. Clients convert them to a user's timezone for display.
 - Features that depend on a destination's wall-clock time or daylight-saving rules must additionally store an IANA timezone instead of changing the canonical UTC instant.
-- Tour and tour start-date model changes are auditable.
+- User, tour, and tour start-date model changes are auditable. User audits exclude password hashes and remember tokens; password updates expose only a `password_changed` marker. Role and supporting-guide pivot changes record explicit old/new assignments.
 - Tour slugs are generated from tour names and must be unique.
 - Validated tour and start-date write data crosses the HTTP boundary through native readonly DTOs before model persistence.
 - HTTP controllers accept validated input, delegate application use cases to actions, and serialize responses. Each action represents one use case; reusable capabilities shared by actions belong in focused services, while stable typed results or inputs use readonly DTOs.
