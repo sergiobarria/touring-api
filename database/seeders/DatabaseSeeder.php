@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
         // Call seeders needed only in development
         if (app()->environment('local')) {
             $this->call([
+                TourGuideSeeder::class,
                 TourSeeder::class,
                 // other development seeders...
             ]);

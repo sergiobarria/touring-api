@@ -44,7 +44,7 @@ it('registers versioned authentication routes with the intended protection', fun
         ->and($routes['v1.auth.logout']->gatherMiddleware())->toContain('auth:sanctum')
         ->and($routes['v1.auth.verification.send']->gatherMiddleware())->toContain('auth:sanctum', 'throttle:email-verification', 'no-store')
         ->and($routes['v1.auth.verification.verify']->gatherMiddleware())->toContain('signed', 'throttle:email-verification', 'no-store')
-        ->and($routes['v1.tours.store']->gatherMiddleware())->not->toContain('auth:sanctum');
+        ->and($routes['v1.tours.store']->gatherMiddleware())->toContain('auth:sanctum', 'can:tours.create');
 });
 
 it('registers a ulid user and returns an api token', function () {

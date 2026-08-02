@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\User;
 use App\Providers\TelescopeServiceProvider;
 use Illuminate\Cache\RateLimiter as CacheRateLimiter;
@@ -69,6 +70,19 @@ it('limits guest api requests independently by ip and resets after decay', funct
     $this->travel(61)->seconds();
 
     $this->withServerVariables($firstIp)->getJson('/api/v1/tours')->assertOk();
+});
+
+it('limits authenticated catalog requests by user identity', function () {
+    $user = User::factory()->withRole(UserRole::USER)->create();
+    $this->actingAs($user);
+
+    for ($attempt = 1; $attempt <= 120; $attempt++) {
+        $this->getJson('/api/v1/tours')->assertOk();
+    }
+
+    $this->getJson('/api/v1/tours')
+        ->assertTooManyRequests()
+        ->assertHeader('Retry-After');
 });
 
 it('limits login request volume independently from credential lockouts', function () {

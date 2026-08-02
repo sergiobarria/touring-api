@@ -6,6 +6,7 @@ use App\Enums\UserPermission;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 final readonly class DeleteUser
@@ -18,6 +19,12 @@ final readonly class DeleteUser
         Gate::authorize(UserPermission::DELETE->value);
         $user = User::query()->findOrFail($userId);
         Gate::authorize('delete', $user);
+
+        if ($user->leadTours()->exists() || $user->supportingTours()->exists()) {
+            throw ValidationException::withMessages([
+                'user' => 'Assigned tour guides must be replaced or removed before deletion.',
+            ]);
+        }
 
         DB::transaction(function () use ($user): void {
             $user->tokens()->delete();

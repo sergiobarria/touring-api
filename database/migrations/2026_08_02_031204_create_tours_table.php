@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('tours', function (Blueprint $table) {
             $table->ulid('id')->primary();
             $table->timestamps();
+            $table->foreignUlid('lead_guide_id')->constrained('users')->restrictOnDelete();
             $table->string('name');
             $table->string('slug')->unique();
             $table->unsignedTinyInteger('duration_days');
@@ -31,6 +32,12 @@ return new class extends Migration
             $table->index('difficulty');
             $table->index('duration_days');
         });
+
+        Schema::create('guide_tour', function (Blueprint $table) {
+            $table->foreignUlid('tour_id')->constrained()->cascadeOnDelete();
+            $table->foreignUlid('user_id')->constrained()->restrictOnDelete();
+            $table->primary(['tour_id', 'user_id']);
+        });
     }
 
     /**
@@ -38,6 +45,7 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists('guide_tour');
         Schema::dropIfExists('tours');
     }
 };

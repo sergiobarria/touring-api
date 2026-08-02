@@ -9,6 +9,8 @@ use OwenIt\Auditing\Models\Audit;
 
 uses(RefreshDatabase::class);
 
+beforeEach(fn () => authenticateTourAdmin());
+
 it('registers nested start-date CRUD routes without put', function () {
     foreach (['index', 'store', 'show', 'update', 'destroy'] as $action) {
         expect(Route::getRoutes()->getByName("v1.tours.start-dates.{$action}"))->not->toBeNull();

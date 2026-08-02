@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\TourPermission;
 use App\Enums\UserPermission;
 use App\Enums\UserRole;
 use App\Models\User;
@@ -20,7 +21,7 @@ it('seeds the canonical roles and user permissions idempotently', function () {
     expect(Role::query()->orderBy('name')->pluck('name')->all())
         ->toBe(collect(UserRole::cases())->pluck('value')->sort()->values()->all())
         ->and(Permission::query()->orderBy('name')->pluck('name')->all())
-        ->toBe(collect(UserPermission::cases())->pluck('value')->sort()->values()->all());
+        ->toBe(collect([...UserPermission::cases(), ...TourPermission::cases()])->pluck('value')->sort()->values()->all());
 });
 
 it('grants user management permissions only to admins', function (UserRole $role) {

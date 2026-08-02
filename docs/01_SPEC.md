@@ -6,7 +6,7 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides Sanctum API-token authentication, email verification, password management, a one-role-per-user authorization foundation, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, resource authorization policies, and reviews are outside the current scope.
+The current implementation provides Sanctum API-token authentication, email verification, password management, permission-protected tour administration, tour-level guide teams, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and admin-only tour analytics. Restoration, booking, and reviews are outside the current scope.
 
 ## 2. Technical conventions
 
@@ -27,7 +27,7 @@ The current implementation provides Sanctum API-token authentication, email veri
 - Authentication is the first feature implemented with this pattern: register, login, and logout delegate to dedicated actions, and token issuance and current-token revocation share an access-token service.
 - Required workflows use explicit orchestration: actions and services call their required collaborators directly. Events and listeners are not used for required state changes, authorization, request correctness, or hidden sequencing. Asynchronous jobs and notifications are dispatched explicitly after surrounding database transactions commit. Events are reserved for optional fan-out, observability, or narrowly documented framework lifecycle compatibility, and application correctness must remain independent of listeners.
 - Tour and tour start-date deletion workflows use soft deletes. Individual media records are hard-deleted only through the explicit owned-image endpoint after their stored files and conversions are removed.
-- Authentication uses Laravel Sanctum personal access tokens supplied through the Bearer authorization scheme. Tour endpoints remain public until authorization policies are defined; destructive endpoints must be protected before production use.
+- Authentication uses Laravel Sanctum personal access tokens supplied through the Bearer authorization scheme. Catalog and start-date reads are public; every tour mutation and analytics endpoint requires its admin-only permission.
 
 ### 2.1 Operational health
 
@@ -48,7 +48,7 @@ Rate-limit counters use the cache store named by `RATE_LIMITER_STORE`. The examp
 
 Host-header validation trusts only the exact hostname configured in `APP_URL`; subdomains are not implicitly trusted. Production configuration must therefore set `APP_URL` to the API's canonical externally reachable URL. Successful and validation-error responses from registration and login include `Cache-Control: no-store, private` and `Pragma: no-cache` so token and credential-related payloads are not retained by clients or intermediaries. Telescope redacts passwords, password confirmations, current passwords, reset tokens, authorization headers, and returned plaintext access tokens.
 
-Tour read and write routes remain public during this phase and receive the global guest/IP rate limit. Authentication and authorization for tour mutations must be added before production use.
+Public tour and start-date reads receive the global guest/IP rate limit. Protected tour requests receive the authenticated per-user limit after Sanctum resolves the Bearer token.
 
 ## 3. Domain model
 
@@ -60,6 +60,7 @@ A tour is the public catalog item users browse. It has the following persisted f
 | --- | --- | --- |
 | `id` | ULID | Primary key. |
 | `name` | string | Display name. |
+| `lead_guide_id` | ULID | Required foreign key to a user whose sole role is `lead-guide`. |
 | `slug` | string | Unique URL-safe value generated from `name`. |
 | `duration_days` | unsigned integer | Number of days in the tour. |
 | `max_group_size` | unsigned integer | Maximum number of participants. |
@@ -83,6 +84,8 @@ The model also exposes `upcoming_dates`, an ordered array of ISO 8601 UTC string
 Rating values must be coherent: a tour without ratings has `rating_avg = null` and `rating_count = 0`; a rated tour has a non-null average and a positive count.
 
 Tour names do not need to be unique. Slugs are generated and updated from names, with numeric suffixes added when necessary. Slugs belonging to soft-deleted tours remain reserved.
+
+Every tour has exactly one lead guide and zero through four supporting guides, for at most five assigned people. Supporting assignments use the unique `guide_tour` pivot and may reference only users whose sole role is `guide`; the lead cannot also be a supporting guide. User deletion is restricted by both guide foreign keys, and the user-management API rejects deletion or an incompatible role change while assignments remain. Tour soft deletion preserves its team. Public tour resources expose `lead_guide` as `{id, name}` and `guides` as a name-then-ULID ordered array of `{id, name}` objects; guide emails are never exposed there.
 
 ### 3.2 Tour start date
 
@@ -139,7 +142,7 @@ Users can have multiple Sanctum personal access tokens, one for each registratio
 
 Authorization uses Spatie Laravel Permission. Every user has exactly one primary role: `user`, `guide`, `lead-guide`, or `admin`. Public registration always assigns `user`; clients cannot request a role. Changing a role replaces the current role through the shared user-role service, and the database enforces at most one role row per model. The role seeder backfills existing users without a role as `user`.
 
-Application authorization checks capabilities rather than role names. The initial user-management permissions are `users.view-any`, `users.view`, `users.create`, `users.update-role`, and `users.delete`. Only `admin` receives these permissions. The remaining roles intentionally receive none of them; self-service profile behavior will be ownership-based and implemented separately.
+Application authorization checks capabilities rather than role names. User-management permissions are `users.view-any`, `users.view`, `users.create`, `users.update-role`, and `users.delete`. Tour permissions are `tours.create`, `tours.update`, `tours.delete`, `tours.manage-images`, `tours.manage-start-dates`, and `tours.view-analytics`. Only `admin` receives these permissions. The remaining roles intentionally receive none of them; self-service profile behavior is ownership-based.
 
 `PermissionSeeder` creates the canonical permissions before `RoleSeeder` creates roles, synchronizes their permission sets, and backfills role-less users. Both seeders are idempotent and run in every environment through `DatabaseSeeder`. The setup workflow runs these two seeders explicitly after migrating, without implicitly loading local tour fixtures. Existing deployments must run `php artisan db:seed --class=Database\\Seeders\\PermissionSeeder` followed by `php artisan db:seed --class=Database\\Seeders\\RoleSeeder` after migrating this phase.
 
@@ -167,7 +170,7 @@ Authenticated administrators can list and inspect users, create an account with 
 
 Administrative creation requires `name`, normalized `email`, `password`, `password_confirmation`, and one of `user`, `guide`, `lead-guide`, or `admin`. It creates the user and sole role atomically, returns the managed user without an API token, and queues the standard verification email after commit. The initial password must be delivered to the user through a secure channel; invitation-specific password setup remains deferred.
 
-Role replacement and deletion are forbidden for the currently authenticated administrator's own account. This prevents the active administrator from accidentally removing their own management access. Deletion is permanent and atomically removes the user's Sanctum tokens, password-reset token, sessions, and role assignment before deleting the account.
+Role replacement and deletion are forbidden for the currently authenticated administrator's own account. Assigned lead/supporting guides must be replaced or removed from every tour before an incompatible role change or user deletion. Deletion is permanent and atomically removes the user's Sanctum tokens, password-reset token, sessions, and role assignment before deleting the account.
 
 ### 3.9 Self-service profiles
 
@@ -420,6 +423,8 @@ Example request:
 ```json
 {
   "name": "The Forest Hiker",
+  "lead_guide_id": "01JLEADGUIDEEXAMPLE00000000",
+  "guide_ids": ["01JGUIDEEXAMPLE000000000001"],
   "duration_days": 5,
   "max_group_size": 25,
   "difficulty": "easy",
@@ -431,7 +436,7 @@ Example request:
 }
 ```
 
-The required fields are `name`, `duration_days`, `max_group_size`, `difficulty`, `price`, and `summary`. `description` and `price_discount_percent` default to `null`, while `is_active` defaults to `true`.
+The required fields are `name`, `lead_guide_id`, `duration_days`, `max_group_size`, `difficulty`, `price`, and `summary`. `guide_ids` defaults to an empty list, `description` and `price_discount_percent` default to `null`, and `is_active` defaults to `true`.
 
 ### 5.4 Partially update a tour
 
@@ -448,6 +453,7 @@ Example request:
 ```json
 {
   "price": 425.50,
+  "guide_ids": [],
   "description": null,
   "is_active": false
 }
@@ -458,6 +464,8 @@ Example request:
 | Field | Validation |
 | --- | --- |
 | `name` | String, maximum 255 characters. |
+| `lead_guide_id` | Existing user ULID with the sole `lead-guide` role; required on create. |
+| `guide_ids` | Zero through four distinct user ULIDs with the sole `guide` role; replaces supporting assignments when supplied. |
 | `duration_days` | Integer from 1 through 255. |
 | `max_group_size` | Integer from 1 through 255. |
 | `difficulty` | `easy`, `moderate`, or `difficult`. |
@@ -467,7 +475,7 @@ Example request:
 | `description` | Nullable string, maximum 65,535 characters. |
 | `is_active` | Boolean. |
 
-The server manages `id`, `slug`, ratings, timestamps, `duration_weeks`, `upcoming_dates`, images, and start dates. These and all unknown request fields are rejected with `422 Unprocessable Entity` rather than silently ignored. Tour creation and update remain JSON-only and do not create, replace, or remove images or start dates.
+The server manages `id`, `slug`, ratings, timestamps, `duration_weeks`, `upcoming_dates`, images, and start dates. These and all unknown request fields are rejected with `422 Unprocessable Entity`. Tour data and guide synchronization are atomic; omitted assignment fields remain unchanged on PATCH and `guide_ids: []` removes every supporting guide.
 
 ### 5.5 Delete a tour
 
@@ -577,7 +585,7 @@ The server derives `tour_id` from the nested URL and manages identifiers and tim
 
 ## 7. Tour analytics endpoints
 
-Tour analytics are public, read-only views of the active catalog. All analytics exclude inactive and soft-deleted tours. Monthly analytics additionally exclude inactive and soft-deleted start dates. These endpoints have fixed behavior and do not expose pagination, filtering, custom sorting, includes, or sparse fieldsets.
+Tour analytics are admin-only, read-only views of the active catalog protected by `tours.view-analytics`. All analytics exclude inactive and soft-deleted tours. Monthly analytics additionally exclude inactive and soft-deleted start dates. These endpoints have fixed behavior and do not expose pagination, filtering, custom sorting, includes, or sparse fieldsets.
 
 ### 7.1 List top tours
 
@@ -672,9 +680,7 @@ When no departures qualify, `plan` is an empty array.
 
 `routes/api.php` is the API version dispatcher. Version 1 routes are defined in `routes/api_v1.php` and mounted with the `v1` URL and route-name prefixes.
 
-These routes are currently public:
-
-All routes in this table receive the global guest/IP rate limit. Tour mutations are intentionally still public in the current phase and must be authorization-protected before production use.
+These routes are public and receive the global guest/IP rate limit:
 
 | Method | URI | Purpose |
 | --- | --- | --- |
@@ -684,20 +690,9 @@ All routes in this table receive the global guest/IP rate limit. Tour mutations 
 | `POST` | `/api/v1/auth/reset-password` | Reset a password using a broker token and revoke all API tokens. |
 | `GET` | `/api/v1/auth/email/verify/{user}/{hash}` | Verify the matching email through a temporary signed URL. |
 | `GET` | `/api/v1/tours` | List active tours. |
-| `POST` | `/api/v1/tours` | Create a tour. |
 | `GET` | `/api/v1/tours/{tour}` | Retrieve one active tour by ULID. |
-| `PATCH` | `/api/v1/tours/{tour}` | Partially update an active or inactive tour. |
-| `DELETE` | `/api/v1/tours/{tour}` | Soft-delete an active or inactive tour by ULID. |
-| `POST` | `/api/v1/tours/{tour}/images` | Upload one or more images to an active or inactive tour. |
-| `DELETE` | `/api/v1/tours/{tour}/images/{image}` | Delete an owned tour image and its conversions. |
 | `GET` | `/api/v1/tours/{tour}/start-dates` | List all non-deleted start dates for a tour. |
-| `POST` | `/api/v1/tours/{tour}/start-dates` | Create a start date for a tour. |
 | `GET` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Retrieve an owned start date. |
-| `PATCH` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Partially update an owned start date. |
-| `DELETE` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Soft-delete an owned start date. |
-| `GET` | `/api/v1/tour-analytics/top-tours` | List the five top active tours. |
-| `GET` | `/api/v1/tour-analytics/stats` | Summarize highly rated active tours by difficulty. |
-| `GET` | `/api/v1/tour-analytics/monthly-plan/{year}` | Group active departures by month in a UTC year. |
 
 The authenticated routes are:
 
@@ -713,6 +708,14 @@ The authenticated routes are:
 | `GET` | `/api/v1/users/{user}` | `auth:sanctum`, `users.view` | Retrieve a managed user. |
 | `PATCH` | `/api/v1/users/{user}/role` | `auth:sanctum`, `users.update-role` | Replace another user's role. |
 | `DELETE` | `/api/v1/users/{user}` | `auth:sanctum`, `users.delete` | Permanently delete another user and authentication state. |
+| `POST` | `/api/v1/tours` | `auth:sanctum`, `tours.create` | Create a tour and guide team. |
+| `PATCH` | `/api/v1/tours/{tour}` | `auth:sanctum`, `tours.update` | Update a tour or replace guide assignments. |
+| `DELETE` | `/api/v1/tours/{tour}` | `auth:sanctum`, `tours.delete` | Soft-delete a tour. |
+| `POST` | `/api/v1/tours/{tour}/images` | `auth:sanctum`, `tours.manage-images` | Upload tour images. |
+| `DELETE` | `/api/v1/tours/{tour}/images/{image}` | `auth:sanctum`, `tours.manage-images` | Delete an owned tour image. |
+| `POST` | `/api/v1/tours/{tour}/start-dates` | `auth:sanctum`, `tours.manage-start-dates` | Create a departure. |
+| `PATCH`, `DELETE` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | `auth:sanctum`, `tours.manage-start-dates` | Update or delete a departure. |
+| `GET` | `/api/v1/tour-analytics/*` | `auth:sanctum`, `tours.view-analytics` | View tour analytics. |
 
 Scramble exposes version-specific OpenAPI documentation:
 
@@ -726,9 +729,9 @@ The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so doc
 
 ## 10. Development data
 
-`DatabaseSeeder` always runs `PermissionSeeder` followed by `RoleSeeder`; only development tour fixtures remain restricted to the local environment. Automated feature tests seed this canonical authorization data whenever `RefreshDatabase` is active.
+`DatabaseSeeder` always runs `PermissionSeeder` followed by `RoleSeeder`. In the local environment it then creates ten lead guides and twenty-five supporting guides before loading tour fixtures. Automated feature tests seed canonical authorization data when protected behavior is exercised.
 
-The development seeder creates 20 tours, each with between three and five start dates and one or two randomly selected images. It runs only in the `local` environment.
+The development seeder creates 20 tours, each with one lead guide, zero through four unique supporting guides, between three and five start dates, and one or two randomly selected images. It runs only in the `local` environment.
 
 Tour factory data follows these rules:
 

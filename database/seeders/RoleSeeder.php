@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\TourPermission;
 use App\Enums\UserPermission;
 use App\Enums\UserRole;
 use App\Models\User;
@@ -26,7 +27,10 @@ final class RoleSeeder extends Seeder
             $role = Role::findOrCreate($roleName->value, self::GUARD_NAME);
             $role->syncPermissions(
                 $roleName === UserRole::ADMIN
-                    ? array_map(fn (UserPermission $permission): string => $permission->value, UserPermission::cases())
+                    ? [
+                        ...array_map(fn (UserPermission $permission): string => $permission->value, UserPermission::cases()),
+                        ...array_map(fn (TourPermission $permission): string => $permission->value, TourPermission::cases()),
+                    ]
                     : [],
             );
         }

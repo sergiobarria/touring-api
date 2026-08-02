@@ -12,6 +12,8 @@ final readonly class TourData
     /** @var list<string> */
     public const array WRITABLE_FIELDS = [
         'name',
+        'lead_guide_id',
+        'guide_ids',
         'duration_days',
         'max_group_size',
         'difficulty',
@@ -24,6 +26,7 @@ final readonly class TourData
 
     public function __construct(
         public string $name,
+        public string $leadGuideId,
         public int $durationDays,
         public int $maxGroupSize,
         public TourDifficulty $difficulty,
@@ -43,6 +46,7 @@ final readonly class TourData
     {
         return new self(
             name: $attributes['name'],
+            leadGuideId: $attributes['lead_guide_id'],
             durationDays: (int) $attributes['duration_days'],
             maxGroupSize: (int) $attributes['max_group_size'],
             difficulty: TourDifficulty::from($attributes['difficulty']),
@@ -65,6 +69,7 @@ final readonly class TourData
     {
         return new self(
             name: $attributes['name'] ?? $tour->name,
+            leadGuideId: $attributes['lead_guide_id'] ?? $tour->lead_guide_id,
             durationDays: (int) ($attributes['duration_days'] ?? $tour->duration_days),
             maxGroupSize: (int) ($attributes['max_group_size'] ?? $tour->max_group_size),
             difficulty: array_key_exists('difficulty', $attributes)
@@ -89,6 +94,7 @@ final readonly class TourData
     {
         return [
             'name' => $this->name,
+            'lead_guide_id' => $this->leadGuideId,
             'duration_days' => $this->durationDays,
             'max_group_size' => $this->maxGroupSize,
             'difficulty' => $this->difficulty->value,

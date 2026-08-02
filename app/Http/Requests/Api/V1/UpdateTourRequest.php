@@ -4,6 +4,8 @@ namespace App\Http\Requests\Api\V1;
 
 use App\DataTransferObjects\TourData;
 use App\Enums\TourDifficulty;
+use App\Enums\TourPermission;
+use App\Http\Requests\Api\V1\Concerns\ValidatesTourGuides;
 use App\Models\Tour;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -12,9 +14,11 @@ use Illuminate\Validation\Validator;
 
 class UpdateTourRequest extends FormRequest
 {
+    use ValidatesTourGuides;
+
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->can(TourPermission::UPDATE->value) === true;
     }
 
     /**
@@ -24,6 +28,9 @@ class UpdateTourRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'string', 'max:255'],
+            'lead_guide_id' => ['sometimes', 'string', 'ulid', Rule::exists('users', 'id')],
+            'guide_ids' => ['sometimes', 'array', 'max:'.Tour::MAX_SUPPORTING_GUIDES],
+            'guide_ids.*' => ['required', 'string', 'ulid', 'distinct', Rule::exists('users', 'id')],
             'duration_days' => ['sometimes', 'integer', 'min:1', 'max:255'],
             'max_group_size' => ['sometimes', 'integer', 'min:1', 'max:255'],
             'difficulty' => ['sometimes', Rule::enum(TourDifficulty::class)],
@@ -50,6 +57,8 @@ class UpdateTourRequest extends FormRequest
             if (array_intersect(array_keys($body), TourData::WRITABLE_FIELDS) === []) {
                 $validator->errors()->add('request', 'At least one writable tour field is required.');
             }
+
+            $this->validateGuideRoles($validator);
 
             if ($validator->errors()->has('max_group_size') || ! array_key_exists('max_group_size', $body)) {
                 return;

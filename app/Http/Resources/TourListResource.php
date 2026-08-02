@@ -28,6 +28,23 @@ class TourListResource extends JsonApiResource
         'images',
     ];
 
+    public function toAttributes(Request $request): array
+    {
+        return [
+            ...collect($this->attributes)->mapWithKeys(fn (string $attribute): array => [
+                $attribute => $this->resource->{$attribute},
+            ])->all(),
+            'lead_guide' => [
+                'id' => $this->leadGuide->id,
+                'name' => $this->leadGuide->name,
+            ],
+            'guides' => $this->guides->map(fn ($guide): array => [
+                'id' => $guide->id,
+                'name' => $guide->name,
+            ])->values()->all(),
+        ];
+    }
+
     /**
      * The resource's relationships.
      */

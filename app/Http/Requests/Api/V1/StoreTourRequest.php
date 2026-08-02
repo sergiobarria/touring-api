@@ -4,6 +4,9 @@ namespace App\Http\Requests\Api\V1;
 
 use App\DataTransferObjects\TourData;
 use App\Enums\TourDifficulty;
+use App\Enums\TourPermission;
+use App\Http\Requests\Api\V1\Concerns\ValidatesTourGuides;
+use App\Models\Tour;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -11,9 +14,11 @@ use Illuminate\Validation\Validator;
 
 class StoreTourRequest extends FormRequest
 {
+    use ValidatesTourGuides;
+
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->can(TourPermission::CREATE->value) === true;
     }
 
     /**
@@ -23,6 +28,9 @@ class StoreTourRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            'lead_guide_id' => ['required', 'string', 'ulid', Rule::exists('users', 'id')],
+            'guide_ids' => ['sometimes', 'array', 'max:'.Tour::MAX_SUPPORTING_GUIDES],
+            'guide_ids.*' => ['required', 'string', 'ulid', 'distinct', Rule::exists('users', 'id')],
             'duration_days' => ['required', 'integer', 'min:1', 'max:255'],
             'max_group_size' => ['required', 'integer', 'min:1', 'max:255'],
             'difficulty' => ['required', Rule::enum(TourDifficulty::class)],
@@ -39,7 +47,10 @@ class StoreTourRequest extends FormRequest
      */
     public function after(): array
     {
-        return [fn (Validator $validator) => $this->rejectUnsupportedFields($validator)];
+        return [function (Validator $validator): void {
+            $this->rejectUnsupportedFields($validator);
+            $this->validateGuideRoles($validator);
+        }];
     }
 
     public function toDto(): TourData

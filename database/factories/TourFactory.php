@@ -3,7 +3,9 @@
 namespace Database\Factories;
 
 use App\Enums\TourDifficulty;
+use App\Enums\UserRole;
 use App\Models\Tour;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -27,6 +29,7 @@ class TourFactory extends Factory
 
         return [
             'name' => $name,
+            'lead_guide_id' => User::factory()->withRole(UserRole::LEAD_GUIDE),
             'slug' => Str::slug($name),
             'duration_days' => fake()->numberBetween(1, 30),
             'max_group_size' => fake()->numberBetween(4, 20),
@@ -44,6 +47,24 @@ class TourFactory extends Factory
             'summary' => fake()->sentence(12),
             'description' => fake()->optional(0.9)->paragraph(3, true),
         ];
+    }
+
+    /**
+     * Assign a known, role-appropriate guide team after creating the tour.
+     *
+     * @param  list<User>  $guides
+     */
+    public function withGuideTeam(User $leadGuide, array $guides = []): static
+    {
+        if (count($guides) > Tour::MAX_SUPPORTING_GUIDES) {
+            throw new InvalidArgumentException('A tour may not have more than four supporting guides.');
+        }
+
+        return $this
+            ->state(['lead_guide_id' => $leadGuide->getKey()])
+            ->afterCreating(fn (Tour $tour) => $tour->guides()->sync(
+                collect($guides)->map(fn (User $guide): string => $guide->getKey())->all(),
+            ));
     }
 
     /**

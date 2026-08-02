@@ -1,6 +1,10 @@
 <?php
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Enums\UserRole;
+use App\Models\User;
+use App\Services\Users\UserRoleService;
+use Database\Seeders\PermissionSeeder;
+use Database\Seeders\RoleSeeder;
 use Tests\TestCase;
 
 /*
@@ -44,7 +48,19 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+function tourUserWithRole(UserRole $role): User
 {
-    // ..
+    $user = User::factory()->create();
+    app(UserRoleService::class)->assign($user, $role);
+
+    return $user;
+}
+
+function authenticateTourAdmin(): User
+{
+    test()->seed([PermissionSeeder::class, RoleSeeder::class]);
+    $admin = tourUserWithRole(UserRole::ADMIN);
+    test()->actingAs($admin);
+
+    return $admin;
 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\Tour;
 use App\Models\TourStartDate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -9,10 +10,16 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    authenticateTourAdmin();
+    $this->leadGuide = tourUserWithRole(UserRole::LEAD_GUIDE);
+});
+
 function validTourPayload(array $overrides = []): array
 {
     return array_replace([
         'name' => 'The Forest Hiker',
+        'lead_guide_id' => test()->leadGuide->id,
         'duration_days' => 5,
         'max_group_size' => 25,
         'difficulty' => 'easy',
@@ -94,6 +101,7 @@ it('rejects missing required create fields', function (string $field) {
     'difficulty',
     'price',
     'summary',
+    'lead_guide_id',
 ]);
 
 it('rejects invalid create values', function (array $invalid, string $field) {

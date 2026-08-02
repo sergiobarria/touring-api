@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Contracts\Auditable;
@@ -29,6 +31,7 @@ use Spatie\Sluggable\Attributes\Sluggable;
 #[Sluggable(from: 'name', to: 'slug')]
 #[Fillable([
     'name',
+    'lead_guide_id',
     'duration_days',
     'max_group_size',
     'difficulty',
@@ -46,6 +49,20 @@ class Tour extends Model implements Auditable, HasMedia
     public const string IMAGE_COLLECTION = 'tour-images';
 
     public const int MAX_IMAGES = 10;
+
+    public const int MAX_SUPPORTING_GUIDES = 4;
+
+    public function leadGuide(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'lead_guide_id');
+    }
+
+    public function guides(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'guide_tour')
+            ->orderBy('name')
+            ->orderBy('users.id');
+    }
 
     public const array ALLOWED_SORTS = [
         'name',

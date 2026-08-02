@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\TourPermission;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\TourAnalyticsController;
 use App\Http\Controllers\Api\V1\TourController;
@@ -36,12 +37,21 @@ Route::prefix('users')
         Route::delete('{user}', 'destroy')->name('destroy');
     });
 
-Route::apiResource('tours', TourController::class)->only(['index', 'store', 'show', 'destroy']);
-Route::patch('tours/{tour}', [TourController::class, 'update'])->name('tours.update');
+Route::apiResource('tours', TourController::class)->only(['index', 'show']);
+Route::post('tours', [TourController::class, 'store'])
+    ->middleware(['auth:sanctum', 'can:'.TourPermission::CREATE->value])
+    ->name('tours.store');
+Route::patch('tours/{tour}', [TourController::class, 'update'])
+    ->middleware(['auth:sanctum', 'can:'.TourPermission::UPDATE->value])
+    ->name('tours.update');
+Route::delete('tours/{tour}', [TourController::class, 'destroy'])
+    ->middleware(['auth:sanctum', 'can:'.TourPermission::DELETE->value])
+    ->name('tours.destroy');
 
 Route::prefix('tours/{tour}/images')
     ->name('tours.images.')
     ->controller(TourImageController::class)
+    ->middleware(['auth:sanctum', 'can:'.TourPermission::MANAGE_IMAGES->value])
     ->group(function (): void {
         Route::post('/', 'store')->name('store');
         Route::delete('{image}', 'destroy')->name('destroy');
@@ -50,6 +60,7 @@ Route::prefix('tours/{tour}/images')
 Route::prefix('tour-analytics')
     ->name('tour-analytics.')
     ->controller(TourAnalyticsController::class)
+    ->middleware(['auth:sanctum', 'can:'.TourPermission::VIEW_ANALYTICS->value])
     ->group(function (): void {
         Route::get('top-tours', 'topTours')->name('top-tours');
         Route::get('stats', 'stats')->name('stats');
@@ -61,8 +72,11 @@ Route::prefix('tours/{tour}/start-dates')
     ->controller(TourStartDateController::class)
     ->group(function (): void {
         Route::get('/', 'index')->name('index');
-        Route::post('/', 'store')->name('store');
         Route::get('{tourStartDate}', 'show')->name('show');
-        Route::patch('{tourStartDate}', 'update')->name('update');
-        Route::delete('{tourStartDate}', 'destroy')->name('destroy');
+        Route::middleware(['auth:sanctum', 'can:'.TourPermission::MANAGE_START_DATES->value])
+            ->group(function (): void {
+                Route::post('/', 'store')->name('store');
+                Route::patch('{tourStartDate}', 'update')->name('update');
+                Route::delete('{tourStartDate}', 'destroy')->name('destroy');
+            });
     });

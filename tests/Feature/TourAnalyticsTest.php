@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
+beforeEach(fn () => authenticateTourAdmin());
+
 it('registers the tour analytics routes as get endpoints', function () {
     foreach (['top-tours', 'stats', 'monthly-plan'] as $action) {
         $route = Route::getRoutes()->getByName("v1.tour-analytics.{$action}");

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\TourPermission;
 use App\Enums\UserPermission;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
@@ -15,7 +16,7 @@ final class PermissionSeeder extends Seeder
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        foreach (UserPermission::cases() as $permission) {
+        foreach ([...UserPermission::cases(), ...TourPermission::cases()] as $permission) {
             Permission::findOrCreate($permission->value, self::GUARD_NAME);
         }
 

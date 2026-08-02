@@ -7,6 +7,8 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
+beforeEach(fn () => authenticateTourAdmin());
+
 it('soft deletes active and inactive tours', function (bool $isActive) {
     $tour = Tour::factory()->create([
         'is_active' => $isActive,

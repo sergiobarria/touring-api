@@ -9,6 +9,7 @@ use App\Http\Requests\Api\V1\UpdateTourRequest;
 use App\Http\Resources\TourListResource;
 use App\Http\Resources\TourResource;
 use App\Models\Tour;
+use App\Services\Tours\TourGuideService;
 use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\Header;
 use Dedoc\Scramble\Attributes\QueryParameter;
@@ -26,6 +27,8 @@ use Throwable;
 #[Group('Tours')]
 class TourController extends Controller
 {
+    public function __construct(private readonly TourGuideService $guideTeams) {}
+
     /**
      * List all tours.
      *
@@ -40,7 +43,7 @@ class TourController extends Controller
     public function index(TourListRequest $request): AnonymousResourceCollection
     {
         $tours = QueryBuilder::for(Tour::class)
-            ->with(['media', 'upcomingStartDates'])
+            ->with(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name'])
             ->allowedIncludes(AllowedInclude::relationship('startDates'))
             ->allowedSorts(...Tour::ALLOWED_SORTS)
             ->allowedFilters(
@@ -67,6 +70,8 @@ class TourController extends Controller
      * Create a tour.
      *
      * Create a tour from validated catalog data. Slugs and ratings are server-managed.
+     *
+     * @throws Throwable
      */
     #[Response(
         201,
@@ -84,8 +89,13 @@ class TourController extends Controller
     )]
     public function store(StoreTourRequest $request): JsonResponse
     {
-        $tour = Tour::create($request->toDto()->toArray());
-        $tour->refresh()->load(['media', 'upcomingStartDates']);
+        $tour = DB::transaction(function () use ($request): Tour {
+            $tour = Tour::create($request->toDto()->toArray());
+            $this->guideTeams->sync($tour, $request->validated('guide_ids', []));
+
+            return $tour;
+        });
+        $tour->refresh()->load(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name']);
 
         return TourResource::make($tour)
             ->response()
@@ -102,7 +112,7 @@ class TourController extends Controller
     public function show(string $tour): TourResource
     {
         $tour = QueryBuilder::for(Tour::class)
-            ->with(['media', 'upcomingStartDates'])
+            ->with(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name'])
             ->allowedIncludes(AllowedInclude::relationship('startDates'))
             ->where('is_active', true)
             ->findOrFail($tour);
@@ -135,10 +145,14 @@ class TourController extends Controller
 
             $lockedTour->update($attributes);
 
+            if ($request->has('guide_ids')) {
+                $this->guideTeams->sync($lockedTour, $request->validated('guide_ids'));
+            }
+
             return $lockedTour->refresh();
         });
 
-        $tour->load(['media', 'upcomingStartDates']);
+        $tour->load(['media', 'upcomingStartDates', 'leadGuide:id,name', 'guides:id,name']);
 
         return TourResource::make($tour);
     }

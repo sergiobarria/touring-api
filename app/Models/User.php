@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -21,6 +23,16 @@ class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasRoles, HasUlids, Notifiable;
+
+    public function leadTours(): HasMany
+    {
+        return $this->hasMany(Tour::class, 'lead_guide_id');
+    }
+
+    public function supportingTours(): BelongsToMany
+    {
+        return $this->belongsToMany(Tour::class, 'guide_tour');
+    }
 
     public function hasVerifiedEmail(): bool
     {

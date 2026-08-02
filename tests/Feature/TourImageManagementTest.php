@@ -14,6 +14,7 @@ use Spatie\MediaLibrary\Support\FileRemover\FileBaseFileRemover;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    authenticateTourAdmin();
     config(['filesystems.disks.r2.url' => 'https://media.test']);
     Storage::fake('r2', ['url' => 'https://media.test']);
 });
