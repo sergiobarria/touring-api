@@ -10,6 +10,7 @@ use App\Actions\Auth\SendEmailVerification;
 use App\Actions\Auth\SendPasswordResetLink;
 use App\Actions\Auth\UpdateUserPassword;
 use App\Actions\Auth\VerifyUserEmail;
+use App\Actions\Users\GetCurrentUser;
 use App\DataTransferObjects\AuthenticationResult;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ForgotPasswordRequest;
@@ -18,6 +19,7 @@ use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Http\Requests\Api\V1\ResetPasswordRequest;
 use App\Http\Requests\Api\V1\SendEmailVerificationRequest;
 use App\Http\Requests\Api\V1\UpdatePasswordRequest;
+use App\Http\Resources\ManagedUserResource;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Dedoc\Scramble\Attributes\Group;
@@ -25,6 +27,7 @@ use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Throwable;
 
 #[Group('Authentication')]
 class AuthController extends Controller
@@ -33,6 +36,8 @@ class AuthController extends Controller
      * Register a user.
      *
      * Create an account and immediately issue an API token.
+     *
+     * @throws Throwable
      */
     #[Response(429, description: 'Too many registration attempts.', type: 'array{message: string}')]
     public function register(RegisterRequest $request, RegisterUser $registerUser): JsonResponse
@@ -71,6 +76,9 @@ class AuthController extends Controller
         return response()->json(['message' => 'If an account exists, a password reset link has been sent.'], 202);
     }
 
+    /**
+     * @throws Throwable
+     */
     public function resetPassword(ResetPasswordRequest $request, ResetUserPassword $action): HttpResponse
     {
         $action->handle($request);
@@ -78,6 +86,9 @@ class AuthController extends Controller
         return response()->noContent();
     }
 
+    /**
+     * @throws Throwable
+     */
     public function updatePassword(UpdatePasswordRequest $request, UpdateUserPassword $action): HttpResponse
     {
         $action->handle($request->user(), $request);
@@ -99,6 +110,14 @@ class AuthController extends Controller
         $action->handle($user, $hash);
 
         return response()->noContent();
+    }
+
+    public function me(Request $request, GetCurrentUser $action): ManagedUserResource
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        return ManagedUserResource::make($action->handle($user));
     }
 
     private function authenticationResponse(AuthenticationResult $result, int $status = 200): JsonResponse

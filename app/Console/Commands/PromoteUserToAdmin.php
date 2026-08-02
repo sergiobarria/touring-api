@@ -9,11 +9,15 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use Throwable;
 
 #[Signature('users:promote-admin {user : User ULID or email address}')]
 #[Description('Promote an existing user to the admin role')]
 final class PromoteUserToAdmin extends Command
 {
+    /**
+     * @throws Throwable
+     */
     public function handle(UserRoleService $userRoles): int
     {
         $identifier = trim((string) $this->argument('user'));

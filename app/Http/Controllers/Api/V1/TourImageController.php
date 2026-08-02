@@ -25,6 +25,8 @@ class TourImageController extends Controller
      * Upload tour images.
      *
      * Add one or more JPEG, PNG, or WebP files to a tour's ordered gallery.
+     *
+     * @throws Throwable
      */
     #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
     #[Response(422, description: 'The upload is invalid.', type: 'array{message: string, errors: array}')]
@@ -95,6 +97,8 @@ class TourImageController extends Controller
      * Delete a tour image.
      *
      * Remove an image and its generated variants from the tour gallery.
+     *
+     * @throws Throwable
      */
     #[Response(404, description: 'Tour or image not found.', type: 'array{message: string}')]
     public function destroy(string $tour, string $image): HttpResponse

@@ -18,6 +18,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 #[Group('Tour Start Dates')]
 class TourStartDateController extends Controller
@@ -45,6 +46,8 @@ class TourStartDateController extends Controller
      * Create a tour start date.
      *
      * Schedule a historical or future departure. Datetimes are normalized to UTC.
+     *
+     * @throws Throwable
      */
     #[Response(
         201,
@@ -96,6 +99,8 @@ class TourStartDateController extends Controller
      * Update a tour start date.
      *
      * Partially update a historical or future departure.
+     *
+     * @throws Throwable
      */
     #[Response(404, description: 'Tour or start date not found.', type: 'array{message: string}')]
     public function update(

@@ -21,6 +21,7 @@ use Illuminate\Validation\ValidationException;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\AllowedInclude;
 use Spatie\QueryBuilder\QueryBuilder;
+use Throwable;
 
 #[Group('Tours')]
 class TourController extends Controller
@@ -113,6 +114,8 @@ class TourController extends Controller
      * Update a tour.
      *
      * Partially update an active or inactive tour by ULID.
+     *
+     * @throws Throwable
      */
     #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
     public function update(UpdateTourRequest $request, string $tour): TourResource

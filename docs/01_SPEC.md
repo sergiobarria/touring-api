@@ -143,7 +143,7 @@ Application authorization checks capabilities rather than role names. The initia
 
 `PermissionSeeder` creates the canonical permissions before `RoleSeeder` creates roles, synchronizes their permission sets, and backfills role-less users. Both seeders are idempotent and run in every environment through `DatabaseSeeder`. The setup workflow runs these two seeders explicitly after migrating, without implicitly loading local tour fixtures. Existing deployments must run `php artisan db:seed --class=Database\\Seeders\\PermissionSeeder` followed by `php artisan db:seed --class=Database\\Seeders\\RoleSeeder` after migrating this phase.
 
-The first administrator is bootstrapped from an existing account with `php artisan users:promote-admin <user-ulid-or-email>`. Promotion replaces the existing role and does not create an account. Admin user-management HTTP endpoints and policies are deferred to the next phase.
+The first administrator is bootstrapped from an existing account with `php artisan users:promote-admin <user-ulid-or-email>`. Promotion replaces the existing role and does not create an account.
 
 ### 3.6 Password management and transactional email
 
@@ -160,6 +160,14 @@ Production email uses Laravel's Resend transport and requires `MAIL_MAILER=resen
 Newly registered users start unverified and receive an encrypted queued verification notification after the registration transaction commits. The email links to `${FRONTEND_URL}/verify-email` with a temporary signed API URL in the `verification_url` query parameter. The signature expires after `EMAIL_VERIFICATION_EXPIRE` minutes, which defaults to 60. `APP_URL` must match the public API origin because it is part of the signature.
 
 Following a valid signed API URL marks the matching email as verified and is idempotent. Both the URL signature and the SHA-1 email fingerprint must match; changed email addresses therefore invalidate older links. Verification mutates state explicitly through an action and does not dispatch Laravel's `Verified` event. An authenticated unverified user may request another notification; verified users receive the same `204 No Content` response without another email. Notification queue failures are reported but do not change registration or resend responses.
+
+### 3.8 Administrative user management
+
+Authenticated administrators can list and inspect users, create an account with any canonical role, replace another user's role, and delete another user. Every operation is authorized by its corresponding `users.*` permission rather than by checking the `admin` role name. Non-admin roles receive `403 Forbidden` before validation or target lookup, preventing validation and ULID-enumeration leaks.
+
+Administrative creation requires `name`, normalized `email`, `password`, `password_confirmation`, and one of `user`, `guide`, `lead-guide`, or `admin`. It creates the user and sole role atomically, returns the managed user without an API token, and queues the standard verification email after commit. The initial password must be delivered to the user through a secure channel; invitation-specific password setup remains deferred.
+
+Role replacement and deletion are forbidden for the currently authenticated administrator's own account. This prevents the active administrator from accidentally removing their own management access. Deletion is permanent and atomically removes the user's Sanctum tokens, password-reset token, sessions, and role assignment before deleting the account.
 
 ## 4. Public API conventions
 
@@ -262,6 +270,21 @@ Logout requires `auth:sanctum`, deletes the current token, and returns `204 No C
 - `GET /api/v1/auth/email/verify/{user}/{hash}` requires a valid, unexpired URL signature; success returns `204 No Content`.
 - `POST /api/v1/auth/email/verification-notification` requires `auth:sanctum`, accepts no request fields, queues another verification email when needed, and returns `204 No Content`.
 - Both endpoints use the named email-verification limiter and return non-cacheable responses.
+
+#### Administrative users
+
+- `GET /api/v1/users` lists users with their role and verification timestamp.
+- `POST /api/v1/users` requires `name`, `email`, `password`, `password_confirmation`, and `role`; success returns `201 Created`.
+- `GET /api/v1/users/{user}` returns one managed user by ULID.
+- `PATCH /api/v1/users/{user}/role` accepts only `role` and replaces the target's sole role.
+- `DELETE /api/v1/users/{user}` permanently deletes the target and returns `204 No Content`.
+- Every endpoint requires `auth:sanctum`, the matching user-management permission, and returns a non-cacheable response because managed-user representations contain account data.
+
+#### Current user
+
+- `GET /api/v1/auth/me` requires `auth:sanctum` and is available to every role.
+- It returns the authenticated user's name, email, sole role, and email-verification timestamp without requiring an administrative permission.
+- The response is non-cacheable. Extended profile fields and profile updates remain deferred to the profile phase.
 
 ## 5. Tour endpoints
 
@@ -673,8 +696,14 @@ The authenticated routes are:
 | Method | URI | Middleware | Purpose |
 | --- | --- | --- | --- |
 | `POST` | `/api/v1/auth/logout` | `auth:sanctum` | Revoke the current Bearer token. |
+| `GET` | `/api/v1/auth/me` | `auth:sanctum` | Return the authenticated user's account profile and role. |
 | `POST` | `/api/v1/auth/email/verification-notification` | `auth:sanctum` | Queue another verification email when the account remains unverified. |
 | `PUT` | `/api/v1/auth/password` | `auth:sanctum` | Change the password and revoke every other API token. |
+| `GET` | `/api/v1/users` | `auth:sanctum`, `users.view-any` | List managed users. |
+| `POST` | `/api/v1/users` | `auth:sanctum`, `users.create` | Create a user with a sole role. |
+| `GET` | `/api/v1/users/{user}` | `auth:sanctum`, `users.view` | Retrieve a managed user. |
+| `PATCH` | `/api/v1/users/{user}/role` | `auth:sanctum`, `users.update-role` | Replace another user's role. |
+| `DELETE` | `/api/v1/users/{user}` | `auth:sanctum`, `users.delete` | Permanently delete another user and authentication state. |
 
 Scramble exposes version-specific OpenAPI documentation:
 

@@ -9,11 +9,15 @@ use App\Services\Users\UserRoleService;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Throwable;
 
 final class RoleSeeder extends Seeder
 {
     private const string GUARD_NAME = 'web';
 
+    /**
+     * @throws Throwable
+     */
     public function run(): void
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
