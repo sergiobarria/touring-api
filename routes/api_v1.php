@@ -15,6 +15,8 @@ Route::prefix('auth')
         Route::post('login', 'login')->middleware(['throttle:login', 'no-store'])->name('login');
         Route::post('forgot-password', 'forgotPassword')->middleware(['throttle:password-email', 'no-store'])->name('password.email');
         Route::post('reset-password', 'resetPassword')->middleware(['throttle:password-reset', 'no-store'])->name('password.reset');
+        Route::get('email/verify/{user}/{hash}', 'verifyEmail')->middleware(['signed', 'throttle:email-verification', 'no-store'])->name('verification.verify');
+        Route::post('email/verification-notification', 'sendEmailVerification')->middleware(['auth:sanctum', 'throttle:email-verification', 'no-store'])->name('verification.send');
         Route::put('password', 'updatePassword')->middleware(['auth:sanctum', 'no-store'])->name('password.update');
         Route::post('logout', 'logout')->middleware('auth:sanctum')->name('logout');
     });

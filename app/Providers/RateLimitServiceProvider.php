@@ -11,6 +11,8 @@ final class RateLimitServiceProvider extends ServiceProvider
 {
     private const int AUTHENTICATED_REQUESTS_PER_MINUTE = 120;
 
+    private const int EMAIL_VERIFICATION_REQUESTS_PER_MINUTE = 6;
+
     private const int GUEST_REQUESTS_PER_MINUTE = 60;
 
     private const int LOGIN_REQUESTS_PER_MINUTE = 30;
@@ -57,6 +59,12 @@ final class RateLimitServiceProvider extends ServiceProvider
             'password-reset',
             fn (Request $request): Limit => Limit::perMinute(self::PASSWORD_RESET_REQUESTS_PER_MINUTE)
                 ->by($request->ip()),
+        );
+
+        RateLimiter::for(
+            'email-verification',
+            fn (Request $request): Limit => Limit::perMinute(self::EMAIL_VERIFICATION_REQUESTS_PER_MINUTE)
+                ->by($request->user()?->getAuthIdentifier() ?? $request->ip()),
         );
     }
 }

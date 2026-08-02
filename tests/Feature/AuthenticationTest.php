@@ -21,14 +21,17 @@ function validRegistrationPayload(array $overrides = []): array
     ], $overrides);
 }
 
-it('registers versioned authentication routes with only logout protected', function () {
+it('registers versioned authentication routes with the intended protection', function () {
     $register = route('v1.auth.register');
     $login = route('v1.auth.login');
     $logout = route('v1.auth.logout');
+    $verificationSend = route('v1.auth.verification.send');
 
     expect($register)->toEndWith('/api/v1/auth/register')
         ->and($login)->toEndWith('/api/v1/auth/login')
         ->and($logout)->toEndWith('/api/v1/auth/logout');
+
+    expect($verificationSend)->toEndWith('/api/v1/auth/email/verification-notification');
 
     $routes = collect(app('router')->getRoutes()->getRoutesByName());
 
@@ -39,6 +42,8 @@ it('registers versioned authentication routes with only logout protected', funct
         ->and($routes['v1.auth.login']->gatherMiddleware())->toContain('throttle:login', 'no-store')
         ->and($routes['v1.auth.login']->gatherMiddleware())->not->toContain('auth:sanctum')
         ->and($routes['v1.auth.logout']->gatherMiddleware())->toContain('auth:sanctum')
+        ->and($routes['v1.auth.verification.send']->gatherMiddleware())->toContain('auth:sanctum', 'throttle:email-verification', 'no-store')
+        ->and($routes['v1.auth.verification.verify']->gatherMiddleware())->toContain('signed', 'throttle:email-verification', 'no-store')
         ->and($routes['v1.tours.store']->gatherMiddleware())->not->toContain('auth:sanctum');
 });
 

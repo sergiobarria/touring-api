@@ -6,16 +6,20 @@ use App\Actions\Auth\LoginUser;
 use App\Actions\Auth\LogoutUser;
 use App\Actions\Auth\RegisterUser;
 use App\Actions\Auth\ResetUserPassword;
+use App\Actions\Auth\SendEmailVerification;
 use App\Actions\Auth\SendPasswordResetLink;
 use App\Actions\Auth\UpdateUserPassword;
+use App\Actions\Auth\VerifyUserEmail;
 use App\DataTransferObjects\AuthenticationResult;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ForgotPasswordRequest;
 use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Http\Requests\Api\V1\ResetPasswordRequest;
+use App\Http\Requests\Api\V1\SendEmailVerificationRequest;
 use App\Http\Requests\Api\V1\UpdatePasswordRequest;
 use App\Http\Resources\UserResource;
+use App\Models\User;
 use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
@@ -77,6 +81,22 @@ class AuthController extends Controller
     public function updatePassword(UpdatePasswordRequest $request, UpdateUserPassword $action): HttpResponse
     {
         $action->handle($request->user(), $request);
+
+        return response()->noContent();
+    }
+
+    public function sendEmailVerification(SendEmailVerificationRequest $request, SendEmailVerification $action): HttpResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $action->handle($user);
+
+        return response()->noContent();
+    }
+
+    public function verifyEmail(string $user, string $hash, VerifyUserEmail $action): HttpResponse
+    {
+        $action->handle($user, $hash);
 
         return response()->noContent();
     }

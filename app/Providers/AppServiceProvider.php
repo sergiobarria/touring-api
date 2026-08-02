@@ -6,6 +6,8 @@ use App\Models\User;
 use App\OpenApi\ConfigureTourWriteSchemas;
 use Dedoc\Scramble\Scramble;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -32,6 +34,20 @@ class AppServiceProvider extends ServiceProvider
             'token' => $token,
             'email' => $user->email,
         ]));
+        VerifyEmail::createUrlUsing(function (User $user): string {
+            $verificationUrl = URL::temporarySignedRoute(
+                'v1.auth.verification.verify',
+                now()->addMinutes((int) config('auth.verification.expire')),
+                [
+                    'user' => $user,
+                    'hash' => sha1($user->getEmailForVerification()),
+                ],
+            );
+
+            return rtrim((string) config('app.frontend_url'), '/').'/verify-email?'.http_build_query([
+                'verification_url' => $verificationUrl,
+            ]);
+        });
         // Register Scramble Docs API versions
         Scramble::registerApi('v1', [
             'api_path' => 'api/v1',

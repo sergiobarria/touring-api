@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Models\User;
 use App\Services\Auth\AccessTokenService;
+use App\Services\Auth\EmailVerificationService;
 use App\Services\Users\UserRoleService;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
@@ -17,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Sleep;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\NewAccessToken;
@@ -66,6 +68,7 @@ function loginActionRequest(string $password = 'correct-password'): LoginRequest
 
 it('registers a user and returns the issued authentication result atomically', function () {
     $this->freezeTime();
+    Notification::fake();
 
     $result = app(RegisterUser::class)->handle(registerActionRequest());
 
@@ -81,6 +84,7 @@ it('registers a user and returns the issued authentication result atomically', f
 it('rolls registration back when token issuance fails', function () {
     expect(fn () => (new RegisterUser(
         new FailingAuthenticationTokenService,
+        app(EmailVerificationService::class),
         app(UserRoleService::class),
     ))->handle(registerActionRequest()))
         ->toThrow(RuntimeException::class, 'Token issuance failed.');

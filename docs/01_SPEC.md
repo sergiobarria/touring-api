@@ -6,7 +6,7 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides Sanctum API-token authentication, a one-role-per-user authorization foundation, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, resource authorization policies, and reviews are outside the current scope.
+The current implementation provides Sanctum API-token authentication, email verification, password management, a one-role-per-user authorization foundation, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, resource authorization policies, and reviews are outside the current scope.
 
 ## 2. Technical conventions
 
@@ -25,6 +25,7 @@ The current implementation provides Sanctum API-token authentication, a one-role
 - Validated tour and start-date write data crosses the HTTP boundary through native readonly DTOs before model persistence.
 - HTTP controllers accept validated input, delegate application use cases to actions, and serialize responses. Each action represents one use case; reusable capabilities shared by actions belong in focused services, while stable typed results or inputs use readonly DTOs.
 - Authentication is the first feature implemented with this pattern: register, login, and logout delegate to dedicated actions, and token issuance and current-token revocation share an access-token service.
+- Required workflows use explicit orchestration: actions and services call their required collaborators directly. Events and listeners are not used for required state changes, authorization, request correctness, or hidden sequencing. Asynchronous jobs and notifications are dispatched explicitly after surrounding database transactions commit. Events are reserved for optional fan-out, observability, or narrowly documented framework lifecycle compatibility, and application correctness must remain independent of listeners.
 - Tour and tour start-date deletion workflows use soft deletes. Individual media records are hard-deleted only through the explicit owned-image endpoint after their stored files and conversions are removed.
 - Authentication uses Laravel Sanctum personal access tokens supplied through the Bearer authorization scheme. Tour endpoints remain public until authorization policies are defined; destructive endpoints must be protected before production use.
 
@@ -41,7 +42,7 @@ Local development runs Laravel's scheduler through `composer run dev`. Productio
 
 ### 2.2 API security baseline
 
-Every versioned API route uses a named global rate limiter. Guests receive 60 requests per minute per IP address. Authenticated requests receive 120 requests per minute per user ULID; the authenticated identity takes precedence over the request IP. Registration additionally allows five requests per minute per IP, and login additionally allows 30 requests per minute per IP. Endpoint-specific limits are cumulative with the global limit. Login's separate five-failed-credential lockout remains keyed by normalized email and IP so request-volume protection does not weaken brute-force protection.
+Every versioned API route uses a named global rate limiter. Guests receive 60 requests per minute per IP address. Authenticated requests receive 120 requests per minute per user ULID; the authenticated identity takes precedence over the request IP. Registration additionally allows five requests per minute per IP, login allows 30 requests per minute per IP, and email-verification requests allow six requests per minute per authenticated user ULID or guest IP. Endpoint-specific limits are cumulative with the global limit. Login's separate five-failed-credential lockout remains keyed by normalized email and IP so request-volume protection does not weaken brute-force protection.
 
 Rate-limit counters use the cache store named by `RATE_LIMITER_STORE`. The example environment uses the database store, while automated tests omit the setting and fall back to their default array cache. Production should set `RATE_LIMITER_STORE=redis` when Redis is available so counters are shared efficiently by every application instance.
 
@@ -148,9 +149,17 @@ The first administrator is bootstrapped from an existing account with `php artis
 
 Password reset uses Laravel's database-backed password broker. Reset links hand off to `${FRONTEND_URL}/reset-password` with the one-time token and normalized email in the query string. Reset requests always return the same accepted response whether the account exists or not. A successful reset changes the password, rotates the remember token, and revokes every Sanctum token. Authenticated password changes require the current password and preserve only the Bearer token used for the request.
 
+Password mutation and token revocation are invoked directly by authentication actions and do not depend on application events or listeners. Login throttling retains Laravel's `Lockout` event solely as a framework-compatible security lifecycle signal; the rate limiter enforces the lockout directly and no listener is required.
+
 Forgot-password and reset submissions each have an independent limit of five requests per IP per minute, separate from registration and login counters. Reset-link notifications are queued with encrypted job payloads, and Laravel's password broker time-boxes both known and unknown email requests to reduce account-enumeration signals. Expired reset tokens are cleared every fifteen minutes. Registration, login, forgot-password, reset-password, and authenticated password-change responses are not cacheable.
 
-Production email uses Laravel's Resend transport and requires `MAIL_MAILER=resend`, `RESEND_API_KEY`, a verified-domain `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`, canonical `APP_URL`, and `FRONTEND_URL`. Local development may retain `MAIL_MAILER=log`. Email verification remains deferred to the next account-security phase.
+Production email uses Laravel's Resend transport and requires `MAIL_MAILER=resend`, `RESEND_API_KEY`, a verified-domain `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`, canonical `APP_URL`, and `FRONTEND_URL`. Local development may retain `MAIL_MAILER=log`.
+
+### 3.7 Email verification
+
+Newly registered users start unverified and receive an encrypted queued verification notification after the registration transaction commits. The email links to `${FRONTEND_URL}/verify-email` with a temporary signed API URL in the `verification_url` query parameter. The signature expires after `EMAIL_VERIFICATION_EXPIRE` minutes, which defaults to 60. `APP_URL` must match the public API origin because it is part of the signature.
+
+Following a valid signed API URL marks the matching email as verified and is idempotent. Both the URL signature and the SHA-1 email fingerprint must match; changed email addresses therefore invalidate older links. Verification mutates state explicitly through an action and does not dispatch Laravel's `Verified` event. An authenticated unverified user may request another notification; verified users receive the same `204 No Content` response without another email. Notification queue failures are reported but do not change registration or resend responses.
 
 ## 4. Public API conventions
 
@@ -247,6 +256,12 @@ Logout requires `auth:sanctum`, deletes the current token, and returns `204 No C
 - `POST /api/v1/auth/forgot-password` accepts only `email` and returns `202 Accepted` generically.
 - `POST /api/v1/auth/reset-password` accepts `email`, `token`, `password`, and `password_confirmation`; success returns `204 No Content` and revokes all tokens.
 - `PUT /api/v1/auth/password` requires `auth:sanctum` and accepts `current_password`, `password`, and `password_confirmation`; success returns `204 No Content`, preserves the current token, and revokes the user's other tokens.
+
+#### Email verification
+
+- `GET /api/v1/auth/email/verify/{user}/{hash}` requires a valid, unexpired URL signature; success returns `204 No Content`.
+- `POST /api/v1/auth/email/verification-notification` requires `auth:sanctum`, accepts no request fields, queues another verification email when needed, and returns `204 No Content`.
+- Both endpoints use the named email-verification limiter and return non-cacheable responses.
 
 ## 5. Tour endpoints
 
@@ -636,6 +651,7 @@ All routes in this table receive the global guest/IP rate limit. Tour mutations 
 | `POST` | `/api/v1/auth/login` | Exchange credentials for an API token. |
 | `POST` | `/api/v1/auth/forgot-password` | Queue a password reset link without exposing account existence. |
 | `POST` | `/api/v1/auth/reset-password` | Reset a password using a broker token and revoke all API tokens. |
+| `GET` | `/api/v1/auth/email/verify/{user}/{hash}` | Verify the matching email through a temporary signed URL. |
 | `GET` | `/api/v1/tours` | List active tours. |
 | `POST` | `/api/v1/tours` | Create a tour. |
 | `GET` | `/api/v1/tours/{tour}` | Retrieve one active tour by ULID. |
@@ -657,6 +673,7 @@ The authenticated routes are:
 | Method | URI | Middleware | Purpose |
 | --- | --- | --- | --- |
 | `POST` | `/api/v1/auth/logout` | `auth:sanctum` | Revoke the current Bearer token. |
+| `POST` | `/api/v1/auth/email/verification-notification` | `auth:sanctum` | Queue another verification email when the account remains unverified. |
 | `PUT` | `/api/v1/auth/password` | `auth:sanctum` | Change the password and revoke every other API token. |
 
 Scramble exposes version-specific OpenAPI documentation:

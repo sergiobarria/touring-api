@@ -4,7 +4,6 @@ namespace App\Actions\Auth;
 
 use App\Http\Requests\Api\V1\ResetPasswordRequest;
 use App\Models\User;
-use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -19,7 +18,6 @@ final readonly class ResetUserPassword
                 $user->forceFill(['password' => $password])->setRememberToken(Str::random(60));
                 $user->save();
                 $user->tokens()->delete();
-                event(new PasswordReset($user));
             });
         });
         if ($status !== Password::PasswordReset) {
