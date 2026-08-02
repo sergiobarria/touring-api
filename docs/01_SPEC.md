@@ -6,14 +6,14 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides Sanctum API-token authentication, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, authorization policies, and reviews are outside the current scope.
+The current implementation provides Sanctum API-token authentication, a one-role-per-user authorization foundation, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, resource authorization policies, and reviews are outside the current scope.
 
 ## 2. Technical conventions
 
 - The application is built with Laravel 13 and PHP 8.3 or newer.
 - PostgreSQL is the primary development and production database. Automated tests use in-memory SQLite for isolation and speed.
 - Application-owned model primary keys are ULIDs, including users, tours, tour start dates, and health-check history. Foreign and polymorphic references to these models use the same ULID type.
-- Framework and third-party infrastructure tables may retain package-compatible identifiers when replacing them would add coupling without improving the public contract. This applies to queue internals, Telescope, audit row IDs, Sanctum token row IDs, and Spatie media rows. Tour images expose Spatie's integer media identifier for owned image operations; no other database sequence IDs are public.
+- Framework and third-party infrastructure tables may retain package-compatible identifiers when replacing them would add coupling without improving the public contract. This applies to queue internals, Telescope, audit row IDs, Sanctum token row IDs, Spatie media rows, and Spatie role and permission rows. Polymorphic references from package tables to application models retain the application's ULID type. Tour images expose Spatie's integer media identifier for owned image operations; no other database sequence IDs are public.
 - API routes are versioned. Version 1 is mounted below `/api/v1` and uses the `v1.` route-name prefix.
 - Responses use Laravel JSON:API resources.
 - Query filtering, sorting, and relationship inclusion use Spatie Laravel Query Builder.
@@ -134,6 +134,16 @@ A user has a ULID primary key, name, unique lowercase email address, hashed pass
 
 Users can have multiple Sanctum personal access tokens, one for each registration or login. Every token uses the internal name `auth-token` and stores a hash of the secret, wildcard abilities, its owning user ULID, and a 30-day expiration timestamp. The plaintext token is returned only when it is created. Logging out deletes only the token used for that request, leaving other tokens valid.
 
+### 3.5 Roles and permissions
+
+Authorization uses Spatie Laravel Permission. Every user has exactly one primary role: `user`, `guide`, `lead-guide`, or `admin`. Public registration always assigns `user`; clients cannot request a role. Changing a role replaces the current role through the shared user-role service, and the database enforces at most one role row per model. The role seeder backfills existing users without a role as `user`.
+
+Application authorization checks capabilities rather than role names. The initial user-management permissions are `users.view-any`, `users.view`, `users.create`, `users.update-role`, and `users.delete`. Only `admin` receives these permissions. The remaining roles intentionally receive none of them; self-service profile behavior will be ownership-based and implemented separately.
+
+`PermissionSeeder` creates the canonical permissions before `RoleSeeder` creates roles, synchronizes their permission sets, and backfills role-less users. Both seeders are idempotent and run in every environment through `DatabaseSeeder`. The setup workflow runs these two seeders explicitly after migrating, without implicitly loading local tour fixtures. Existing deployments must run `php artisan db:seed --class=Database\\Seeders\\PermissionSeeder` followed by `php artisan db:seed --class=Database\\Seeders\\RoleSeeder` after migrating this phase.
+
+The first administrator is bootstrapped from an existing account with `php artisan users:promote-admin <user-ulid-or-email>`. Promotion replaces the existing role and does not create an account. Admin user-management HTTP endpoints and policies are deferred to the next phase.
+
 ## 4. Public API conventions
 
 ### 4.1 JSON:API resource types
@@ -203,7 +213,7 @@ Authentication requests use plain top-level JSON objects. Successful registratio
 POST /api/v1/auth/register
 ```
 
-The request requires `name`, `email`, `password`, and `password_confirmation`. Emails are trimmed and normalized to lowercase before validation, and passwords use the application's default Laravel password rules and must be confirmed. Unknown fields, including `device_name`, are rejected. A successful request atomically creates the user and 30-day token and returns `201 Created`.
+The request requires `name`, `email`, `password`, and `password_confirmation`. Emails are trimmed and normalized to lowercase before validation, and passwords use the application's default Laravel password rules and must be confirmed. Unknown fields, including `device_name` and `role`, are rejected. A successful request atomically creates the user, assigns the `user` role, creates a 30-day token, and returns `201 Created`. Roles are internal and are not added to the authentication response in this phase.
 
 Registration is limited to five requests per IP address per minute in addition to the global API limit. Registration responses are not cacheable.
 
@@ -642,6 +652,8 @@ The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so doc
 
 ## 10. Development data
 
+`DatabaseSeeder` always runs `PermissionSeeder` followed by `RoleSeeder`; only development tour fixtures remain restricted to the local environment. Automated feature tests seed this canonical authorization data whenever `RefreshDatabase` is active.
+
 The development seeder creates 20 tours, each with between three and five start dates and one or two randomly selected images. It runs only in the `local` environment.
 
 Tour factory data follows these rules:
@@ -694,6 +706,7 @@ Execution deletes every object, verifies the bucket is empty, and only then dele
 Feature coverage must verify:
 
 - Registration validation, lowercase email uniqueness, password hashing, ULID users, immediate token issuance, and response secrecy.
+- Default registration roles, one-role database enforcement, role replacement, role-less user backfill, explicit admin permissions, idempotent authorization seeders, and first-admin promotion by ULID or email.
 - Valid and invalid login behavior, generic credential failures, independent concurrent tokens, fixed internal token naming, and failed-attempt throttling.
 - Bearer authentication, 30-day expiration, current-token logout, preservation of other tokens, and daily expired-token pruning.
 - Active-only list and detail visibility.
@@ -739,7 +752,7 @@ php artisan scramble:export --api=v1
 The following capabilities are intentionally not part of the current public contract and must be specified before implementation:
 
 - Restoring soft-deleted tours or start dates.
-- Authorization policies, roles, granular token abilities, and protection of tour endpoints.
+- Admin user-management endpoints, resource authorization policies, granular token abilities, and protection of tour endpoints.
 - Email verification, password reset, refresh tokens, token listing, and revoke-all workflows.
 - Client-controlled image reordering.
 - Direct or presigned uploads and queued image conversions.

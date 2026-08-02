@@ -6,7 +6,7 @@ This is a Laravel 13 REST API. Application code belongs in `app/`; controllers l
 
 ## Build, Test, and Development Commands
 
-- `composer run setup` installs PHP/Node dependencies, creates `.env`, generates the app key, migrates, and builds assets.
+- `composer run setup` installs PHP/Node dependencies, creates `.env`, generates the app key, migrates, runs the canonical permission and role seeders, and builds assets.
 - `composer run dev` starts the Laravel server, queue listener, Pail logs, and Vite together.
 - `composer test` clears cached configuration and runs the full test suite.
 - `php artisan test --compact --filter=testName` runs a focused Pest test.
@@ -20,6 +20,8 @@ Follow `.editorconfig`: UTF-8, LF endings, four-space indentation (two spaces fo
 ## Application Architecture
 
 Keep controllers thin: accept validated requests, delegate application behavior, and serialize the result. Put each use case in a dedicated action with a typed `handle(...)` method under `app/Actions/<Domain>`. Extract a service under `app/Services/<Domain>` only when a capability is shared by actions or represents a meaningful integration boundary; do not create a service merely to relocate one action's implementation. Prefer concrete constructor or method injection through Laravel's container. Add interfaces only when multiple implementations or a real external boundary justify them. Use readonly DTOs when inputs or results benefit from a stable typed boundary.
+
+Use Spatie Permission for authorization. Users have exactly one primary role; replace roles through `UserRoleService` rather than attaching additional roles. Authorize application behavior with permission checks or policies instead of role-name checks. Keep canonical permissions in `PermissionSeeder`, canonical roles and their permission mappings in `RoleSeeder`, and run the permission seeder first. Self-service behavior shared by roles should use ownership policies rather than a `user`-only permission.
 
 ## Testing Guidelines
 

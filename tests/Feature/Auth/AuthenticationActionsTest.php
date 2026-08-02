@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Models\User;
 use App\Services\Auth\AccessTokenService;
+use App\Services\Users\UserRoleService;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -73,14 +74,19 @@ it('registers a user and returns the issued authentication result atomically', f
         ->and(Hash::check('correct-horse-battery-staple', $result->user->password))->toBeTrue()
         ->and($result->token->accessToken->tokenable_id)->toBe($result->user->id)
         ->and($result->token->accessToken->name)->toBe('auth-token')
+        ->and($result->user->hasExactRoles('user'))->toBeTrue()
         ->and(User::query()->count())->toBe(1);
 });
 
 it('rolls registration back when token issuance fails', function () {
-    expect(fn () => (new RegisterUser(new FailingAuthenticationTokenService))->handle(registerActionRequest()))
+    expect(fn () => (new RegisterUser(
+        new FailingAuthenticationTokenService,
+        app(UserRoleService::class),
+    ))->handle(registerActionRequest()))
         ->toThrow(RuntimeException::class, 'Token issuance failed.');
 
-    expect(User::query()->count())->toBe(0);
+    expect(User::query()->count())->toBe(0)
+        ->and(DB::table('model_has_roles')->count())->toBe(0);
 });
 
 it('logs in through the action and rehashes the password when needed', function () {

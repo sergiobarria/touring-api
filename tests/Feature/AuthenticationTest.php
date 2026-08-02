@@ -71,6 +71,7 @@ it('registers a ulid user and returns an api token', function () {
     expect(Str::isUlid($response->json('data.id')))->toBeTrue()
         ->and($response->json('data.id'))->toBe($user->id)
         ->and(Hash::check('correct-horse-battery-staple', $user->password))->toBeTrue()
+        ->and($user->hasExactRoles('user'))->toBeTrue()
         ->and($token)->not->toBeNull()
         ->and($token->tokenable_id)->toBe($user->id)
         ->and($token->name)->toBe('auth-token')

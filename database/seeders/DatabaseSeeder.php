@@ -13,7 +13,8 @@ class DatabaseSeeder extends Seeder
     {
         // Call seeders needed in all environments
         $this->call([
-            // ...
+            PermissionSeeder::class,
+            RoleSeeder::class,
         ]);
 
         // Call seeders needed only in development

@@ -19,6 +19,7 @@
         "owen-it/laravel-auditing": "^14.0",
         "spatie/laravel-health": "^1.40",
         "spatie/laravel-medialibrary": "^11.22",
+        "spatie/laravel-permission": "^7.3",
         "spatie/laravel-query-builder": "^7.3",
         "spatie/laravel-sluggable": "^4.0"
     },
@@ -52,6 +53,8 @@
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate",
             "@php artisan migrate --force",
+            "@php artisan db:seed --class=Database\\\\Seeders\\\\PermissionSeeder --force",
+            "@php artisan db:seed --class=Database\\\\Seeders\\\\RoleSeeder --force",
             "npm install --ignore-scripts",
             "npm run build"
         ],
