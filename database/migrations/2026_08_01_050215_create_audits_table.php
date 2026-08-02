@@ -20,7 +20,7 @@ return new class extends Migration
 
             $table->bigIncrements('id');
             $table->string($morphPrefix.'_type')->nullable();
-            $table->unsignedBigInteger($morphPrefix.'_id')->nullable();
+            $table->ulid($morphPrefix.'_id')->nullable();
             $table->string('event');
             $table->ulidMorphs('auditable');
             $table->text('old_values')->nullable();

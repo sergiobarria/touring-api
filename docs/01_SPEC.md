@@ -12,7 +12,8 @@ The current implementation provides a public tour catalog, CRUD operations for t
 
 - The application is built with Laravel 13 and PHP 8.3 or newer.
 - PostgreSQL is the primary development and production database. Automated tests use in-memory SQLite for isolation and speed.
-- Tour and tour start-date identifiers are ULIDs. Tour images expose Spatie's integer media identifier for owned image operations; no other database sequence IDs are public.
+- Application-owned model primary keys are ULIDs, including users, tours, tour start dates, and health-check history. Foreign and polymorphic references to these models use the same ULID type.
+- Framework and third-party infrastructure tables may retain package-compatible identifiers when replacing them would add coupling without improving the public contract. This applies to queue internals, Telescope, audit row IDs, Sanctum token row IDs, and Spatie media rows. Tour images expose Spatie's integer media identifier for owned image operations; no other database sequence IDs are public.
 - API routes are versioned. Version 1 is mounted below `/api/v1` and uses the `v1.` route-name prefix.
 - Responses use Laravel JSON:API resources.
 - Query filtering, sorting, and relationship inclusion use Spatie Laravel Query Builder.
@@ -24,6 +25,17 @@ The current implementation provides a public tour catalog, CRUD operations for t
 - Validated tour and start-date write data crosses the HTTP boundary through native readonly DTOs before model persistence.
 - Tour and tour start-date deletion workflows use soft deletes. Individual media records are hard-deleted only through the explicit owned-image endpoint after their stored files and conversions are removed.
 - Authentication is intentionally deferred during development, so the current endpoints are public. Destructive endpoints must be protected before production use.
+
+### 2.1 Operational health
+
+The application exposes two unversioned, public health endpoints that are intentionally excluded from the Scramble API documentation:
+
+- `GET /up` is Laravel's lightweight application liveness probe. It does not verify external dependencies.
+- `GET /health` is the readiness probe. It returns `200` with `{ "healthy": true }` when every registered check passes and `503 Service Unavailable` with `{ "healthy": false }` when checks are unhealthy or their stored results cannot be read. It never exposes diagnostic details.
+
+The readiness checks run every minute and their ULID-keyed results are retained in the database for seven days. The public endpoint only reads the latest scheduled result batch and treats results older than two minutes as unhealthy; requests, including those with a `fresh` query parameter, do not execute checks or write history. Notifications are disabled. Local, testing, and other non-production environments check only the default database connection. Production additionally verifies that disk usage is below the package's warning and failure thresholds of 70% and 90%, `APP_ENV` is `production`, and debug mode is disabled.
+
+Local development runs Laravel's scheduler through `composer run dev`. Production infrastructure must invoke `php artisan schedule:run` once per minute.
 
 ## 3. Domain model
 
