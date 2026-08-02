@@ -50,6 +50,23 @@ class UpdateTourRequest extends FormRequest
             if (array_intersect(array_keys($body), TourData::WRITABLE_FIELDS) === []) {
                 $validator->errors()->add('request', 'At least one writable tour field is required.');
             }
+
+            if ($validator->errors()->has('max_group_size') || ! array_key_exists('max_group_size', $body)) {
+                return;
+            }
+
+            $tour = $this->route('tour');
+
+            if (! $tour instanceof Tour) {
+                $tour = Tour::find($tour);
+            }
+
+            if ($tour?->startDates()->where('available_spots', '>', $body['max_group_size'])->exists()) {
+                $validator->errors()->add(
+                    'max_group_size',
+                    'The maximum group size must not be less than available spots on an existing start date.',
+                );
+            }
         }];
     }
 

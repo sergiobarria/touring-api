@@ -16,6 +16,8 @@ use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\AllowedInclude;
 use Spatie\QueryBuilder\QueryBuilder;
@@ -115,9 +117,24 @@ class TourController extends Controller
     #[Response(404, description: 'Tour not found.', type: 'array{message: string}')]
     public function update(UpdateTourRequest $request, string $tour): TourResource
     {
-        $tour = Tour::findOrFail($tour);
+        $tour = DB::transaction(function () use ($request, $tour): Tour {
+            $lockedTour = Tour::query()->lockForUpdate()->findOrFail($tour);
+            $attributes = $request->toDto($lockedTour)->toArray();
 
-        $tour->update($request->toDto($tour)->toArray());
+            if (array_key_exists('max_group_size', $request->validated())
+                && $lockedTour->startDates()
+                    ->where('available_spots', '>', $attributes['max_group_size'])
+                    ->exists()) {
+                throw ValidationException::withMessages([
+                    'max_group_size' => 'The maximum group size must not be less than available spots on an existing start date.',
+                ]);
+            }
+
+            $lockedTour->update($attributes);
+
+            return $lockedTour->refresh();
+        });
+
         $tour->load('upcomingStartDates');
 
         return TourResource::make($tour);

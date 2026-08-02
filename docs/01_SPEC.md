@@ -6,7 +6,7 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides a public tour catalog and supports creating, partially updating, and soft-deleting tours. Restoration, booking, authentication, reviews, and media management are outside the current scope.
+The current implementation provides a public tour catalog and supports CRUD operations for tours and their start dates. Restoration, booking, authentication, reviews, and media management are outside the current scope.
 
 ## 2. Technical conventions
 
@@ -21,7 +21,7 @@ The current implementation provides a public tour catalog and supports creating,
 - Features that depend on a destination's wall-clock time or daylight-saving rules must additionally store an IANA timezone instead of changing the canonical UTC instant.
 - Tour and tour start-date model changes are auditable.
 - Tour slugs are generated from tour names and must be unique.
-- Validated tour write data crosses the HTTP boundary through a native readonly DTO before model persistence.
+- Validated tour and start-date write data crosses the HTTP boundary through native readonly DTOs before model persistence.
 - All application deletion workflows use soft deletes. The application must not expose hard-delete operations.
 - Authentication is intentionally deferred during development, so the current endpoints are public. Destructive endpoints must be protected before production use.
 
@@ -68,12 +68,14 @@ A tour can have many scheduled start dates. Each start date belongs to exactly o
 | `id` | ULID | Primary key. |
 | `tour_id` | ULID | Foreign key to `tours.id`. |
 | `start_datetime_utc` | timestamp | Scheduled start in UTC. |
-| `available_spots` | unsigned integer | Remaining capacity; defaults to `0`. |
+| `available_spots` | unsigned integer | Remaining capacity; defaults to `0` and cannot exceed the tour's `max_group_size`. |
 | `is_active` | boolean | Whether this departure is active; defaults to `true`. |
 | `created_at`, `updated_at` | timestamps | Internal lifecycle timestamps. |
 | `deleted_at` | nullable timestamp | Marks a soft-deleted start date; `null` means it has not been deleted. |
 
-Soft-deleting a tour does not delete or modify its start dates. This preserves the complete schedule for a future restoration. The database foreign key retains a cascading hard-delete constraint as an integrity fallback, but application workflows must not invoke it. The combination of `tour_id` and `start_datetime_utc` is indexed.
+Soft-deleting a tour does not delete or modify its start dates. This preserves the complete schedule for a future restoration. The database foreign key retains a cascading hard-delete constraint as an integrity fallback, but application workflows must not invoke it.
+
+The combination of `tour_id` and `start_datetime_utc` is unique. Inputs representing the same instant with different UTC offsets are duplicates because timestamps are normalized to UTC. Soft-deleted records continue reserving their tour and instant. Reducing a tour's `max_group_size` is rejected when a non-deleted start date has more available spots than the proposed maximum.
 
 ## 4. Public API conventions
 
@@ -85,7 +87,7 @@ Soft-deleting a tour does not delete or modify its start dates. This preserves t
 
 Internal visibility flags and timestamps are not returned as tour attributes. A start date's `is_active` value is currently part of its public resource representation.
 
-Tour write requests use a plain top-level JSON object. Tour responses retain the JSON:API resource representation.
+Tour and start-date write requests use a plain top-level JSON object. Responses retain the JSON:API resource representation.
 
 ### 4.2 Sparse fieldsets
 
@@ -300,24 +302,91 @@ A successful request soft-deletes the tour by setting `deleted_at` and returns `
 
 Unknown, malformed, or already-deleted identifiers return `404 Not Found`. Deleted slugs remain reserved by the global unique constraint. No restore or hard-delete endpoint is currently available.
 
-## 6. Errors and validation
+## 6. Tour start-date endpoints
+
+Start-date management is nested below its owning tour. All five endpoints accept active or inactive tours, historical or future dates, and only non-deleted records. A soft-deleted parent, unknown or malformed identifier, or start date belonging to another tour returns `404 Not Found`.
+
+### 6.1 List a tour's start dates
+
+```http
+GET /api/v1/tours/{tour}/start-dates
+```
+
+Returns all non-deleted start dates ordered by `start_datetime_utc` ascending and then ULID. Historical, future, active, inactive, available, and sold-out dates are included. The endpoint uses the same `page` and `per_page` parameters and validation as the tour list.
+
+### 6.2 Retrieve a tour start date
+
+```http
+GET /api/v1/tours/{tour}/start-dates/{tourStartDate}
+```
+
+Returns the JSON:API `tour_start_dates` resource when it belongs to the parent tour.
+
+### 6.3 Create a tour start date
+
+```http
+POST /api/v1/tours/{tour}/start-dates
+```
+
+Creates a departure and returns `201 Created`, its complete resource, and a `Location` header for the nested detail endpoint.
+
+```json
+{
+  "start_datetime_utc": "2026-08-10T04:30:00-05:00",
+  "available_spots": 12,
+  "is_active": true
+}
+```
+
+`start_datetime_utc` is required and must be an ISO 8601 datetime with `Z` or an explicit numeric offset. It is normalized and stored as UTC; the example is therefore the same instant as `2026-08-10T09:30:00Z`. `available_spots` defaults to `0`, and `is_active` defaults to `true`.
+
+### 6.4 Partially update a tour start date
+
+```http
+PATCH /api/v1/tours/{tour}/start-dates/{tourStartDate}
+```
+
+Partially updates a departure and returns `200 OK`. At least one writable field is required; omitted fields retain their values. PUT is not supported.
+
+### 6.5 Delete a tour start date
+
+```http
+DELETE /api/v1/tours/{tour}/start-dates/{tourStartDate}
+```
+
+Soft-deletes the departure and returns `204 No Content`. It disappears from start-date reads, relationship inclusion, and `upcoming_dates`. Repeated deletion returns `404 Not Found`; no restore or hard-delete endpoint is available.
+
+#### Start-date write validation
+
+| Field | Validation |
+| --- | --- |
+| `start_datetime_utc` | Timezone-aware ISO 8601 datetime. Required on create and unique within the tour after UTC normalization, including soft-deleted records. |
+| `available_spots` | Integer from `0` through the parent tour's `max_group_size`. |
+| `is_active` | Boolean. |
+
+The server derives `tour_id` from the nested URL and manages identifiers and timestamps. These fields and all unknown fields are rejected with `422 Unprocessable Entity`. Concurrent duplicate creation or update is also translated from the database uniqueness constraint into a validation error.
+
+## 7. Errors and validation
 
 - Successful list and detail requests return `200 OK`.
 - Successful tour creation returns `201 Created`, a detail resource, and a `Location` header.
 - Successful partial updates return `200 OK` with the updated detail resource.
 - A successful tour deletion returns `204 No Content` with an empty body.
+- Successful start-date creation, update, and deletion return `201 Created`, `200 OK`, and `204 No Content`, respectively.
 - Invalid list or write input, unknown write fields, and empty PATCH requests return `422 Unprocessable Entity` with Laravel validation errors.
 - Unsupported filters, sorts, or includes return `400 Bad Request`.
 - A missing, inactive, unknown, malformed, or soft-deleted tour identifier on the detail endpoint returns `404 Not Found`.
 - An unknown, malformed, or already-deleted tour identifier on the delete endpoint returns `404 Not Found`.
 - An unknown, malformed, or soft-deleted tour identifier on the PATCH endpoint returns `404 Not Found`.
 - PUT is not registered for tours and returns `405 Method Not Allowed`.
+- Missing parents, mismatched ownership, and unknown, malformed, or soft-deleted start dates return `404 Not Found`.
+- PUT is not registered for start dates and returns `405 Method Not Allowed`.
 
-## 7. Routing and documentation
+## 8. Routing and documentation
 
 `routes/api.php` is the API version dispatcher. Version 1 routes are defined in `routes/api_v1.php` and mounted with the `v1` URL and route-name prefixes.
 
-Only these tour routes are currently public:
+These tour and start-date routes are currently public:
 
 | Method | URI | Purpose |
 | --- | --- | --- |
@@ -326,17 +395,22 @@ Only these tour routes are currently public:
 | `GET` | `/api/v1/tours/{tour}` | Retrieve one active tour by ULID. |
 | `PATCH` | `/api/v1/tours/{tour}` | Partially update an active or inactive tour. |
 | `DELETE` | `/api/v1/tours/{tour}` | Soft-delete an active or inactive tour by ULID. |
+| `GET` | `/api/v1/tours/{tour}/start-dates` | List all non-deleted start dates for a tour. |
+| `POST` | `/api/v1/tours/{tour}/start-dates` | Create a start date for a tour. |
+| `GET` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Retrieve an owned start date. |
+| `PATCH` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Partially update an owned start date. |
+| `DELETE` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Soft-delete an owned start date. |
 
 Scramble exposes version-specific OpenAPI documentation:
 
 - Interactive documentation: `/docs/v1`
 - OpenAPI document: `/docs/v1.json`
 - Documented server base path: `/api/v1`
-- Tour operations are grouped under the plural `Tours` tag.
+- Tour operations are grouped under `Tours`; start-date operations are grouped under `Tour Start Dates`.
 
 The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so documentation cannot mix API versions.
 
-## 8. Development data
+## 9. Development data
 
 The development seeder creates 20 tours, each with between three and five start dates. It runs only in the `local` environment.
 
@@ -352,7 +426,7 @@ Tour factory data follows these rules:
 
 Generated start dates occur from 1 to 180 days in the future, use UTC, add a randomized daytime hour and either zero or 30 minutes, and are active about 90% of the time.
 
-## 9. Acceptance and verification
+## 10. Acceptance and verification
 
 Feature coverage must verify:
 
@@ -371,6 +445,11 @@ Feature coverage must verify:
 - Partial updates that preserve omitted and server-managed data while allowing nullable values to be cleared.
 - Rejection of invalid, empty, unknown-field, read-only-field, and PUT write requests.
 - Validation errors, unsupported query capabilities, and missing tour behavior.
+- Nested start-date ownership, inactive-tour access, chronological pagination, and historical-date access.
+- Start-date creation defaults, UTC normalization, ULIDs, resource locations, partial updates, and soft deletion.
+- Start-date validation for invalid or missing datetimes, capacity, unknown/read-only fields, empty PATCH, and PUT.
+- UTC-equivalent duplicate prevention, including soft-deleted records, and database race protection.
+- Rejection of tour capacity reductions below existing start-date availability.
 
 Use the following commands during verification:
 
@@ -378,15 +457,14 @@ Use the following commands during verification:
 composer test
 vendor/bin/pint --dirty --format agent
 php artisan scramble:analyze --api=v1
+php artisan scramble:export --api=v1
 ```
 
-## 10. Deferred scope
+## 11. Deferred scope
 
 The following capabilities are intentionally not part of the current public contract and must be specified before implementation:
 
-- Creating and updating tour start dates.
 - Restoring soft-deleted tours or start dates.
-- Deleting individual tour start dates through the API.
 - Authentication and authorization.
 - Tour images or media.
 - Reviews and rating submission.

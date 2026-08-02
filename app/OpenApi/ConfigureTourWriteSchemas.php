@@ -3,7 +3,9 @@
 namespace App\OpenApi;
 
 use App\Http\Requests\Api\V1\StoreTourRequest;
+use App\Http\Requests\Api\V1\StoreTourStartDateRequest;
 use App\Http\Requests\Api\V1\UpdateTourRequest;
+use App\Http\Requests\Api\V1\UpdateTourStartDateRequest;
 use App\OpenApi\Types\StrictObjectType;
 use Dedoc\Scramble\Contracts\DocumentTransformer;
 use Dedoc\Scramble\OpenApiContext;
@@ -16,10 +18,15 @@ final class ConfigureTourWriteSchemas implements DocumentTransformer
     {
         $this->makeRequestSchemaStrict($document, StoreTourRequest::class);
         $this->makeRequestSchemaStrict($document, UpdateTourRequest::class, minimumProperties: 1);
+        $this->makeRequestSchemaStrict($document, StoreTourStartDateRequest::class);
+        $this->makeRequestSchemaStrict($document, UpdateTourStartDateRequest::class, minimumProperties: 1);
 
         foreach ($document->paths as $path) {
             foreach ($path->operations as $operation) {
-                if ($operation->operationId === 'v1.tours.update') {
+                if (in_array($operation->operationId, [
+                    'v1.tours.update',
+                    'v1.tours.start-dates.update',
+                ], strict: true)) {
                     $operation->requestBodyObject?->required();
                 }
             }
