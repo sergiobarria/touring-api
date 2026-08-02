@@ -2,6 +2,7 @@
 
 namespace App\OpenApi;
 
+use App\Http\Requests\Api\V1\StoreTourImagesRequest;
 use App\Http\Requests\Api\V1\StoreTourRequest;
 use App\Http\Requests\Api\V1\StoreTourStartDateRequest;
 use App\Http\Requests\Api\V1\UpdateTourRequest;
@@ -21,6 +22,7 @@ final class ConfigureTourWriteSchemas implements DocumentTransformer
         $this->makeRequestSchemaStrict($document, UpdateTourRequest::class, minimumProperties: 1);
         $this->makeRequestSchemaStrict($document, StoreTourStartDateRequest::class);
         $this->makeRequestSchemaStrict($document, UpdateTourStartDateRequest::class, minimumProperties: 1);
+        $this->makeRequestSchemaStrict($document, StoreTourImagesRequest::class);
         $this->requireTopTourAttributes($document);
 
         foreach ($document->paths as $path) {
@@ -53,6 +55,7 @@ final class ConfigureTourWriteSchemas implements DocumentTransformer
                 'rating_avg',
                 'summary',
                 'difficulty',
+                'images',
             ]);
         }
     }

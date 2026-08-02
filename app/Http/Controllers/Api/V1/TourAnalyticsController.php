@@ -27,6 +27,7 @@ class TourAnalyticsController extends Controller
     public function topTours(): AnonymousResourceCollection
     {
         $tours = Tour::query()
+            ->with('media')
             ->where('is_active', true)
             ->orderByRaw('CASE WHEN rating_avg IS NULL THEN 1 ELSE 0 END')
             ->orderByDesc('rating_avg')

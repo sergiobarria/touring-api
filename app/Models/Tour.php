@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\DataTransferObjects\TourImageData;
 use App\Enums\TourDifficulty;
 use Database\Factories\TourFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -14,10 +15,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Contracts\Auditable;
+use Spatie\Image\Enums\Fit;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Spatie\Sluggable\Attributes\Sluggable;
 
 /**
  * @property-read float $duration_weeks
+ * @property-read list<array{id: int, position: int, is_cover: bool, name: string, mime_type: string|null, size_bytes: int, original_url: string, card_url: string, thumbnail_url: string}> $images
  * @property-read list<string> $upcoming_dates
  */
 #[Sluggable(from: 'name', to: 'slug')]
@@ -32,10 +38,14 @@ use Spatie\Sluggable\Attributes\Sluggable;
     'description',
     'is_active',
 ])]
-class Tour extends Model implements Auditable
+class Tour extends Model implements Auditable, HasMedia
 {
     /** @use HasFactory<TourFactory> */
-    use HasFactory, HasUlids, \OwenIt\Auditing\Auditable, SoftDeletes;
+    use HasFactory, HasUlids, InteractsWithMedia, \OwenIt\Auditing\Auditable, SoftDeletes;
+
+    public const string IMAGE_COLLECTION = 'tour-images';
+
+    public const int MAX_IMAGES = 10;
 
     public const array ALLOWED_SORTS = [
         'name',
@@ -56,6 +66,32 @@ class Tour extends Model implements Auditable
             ->where('start_datetime_utc', '>', now('UTC'))
             ->where('is_active', true)
             ->orderBy('start_datetime_utc');
+    }
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection(self::IMAGE_COLLECTION)
+            ->useDisk((string) config('media-library.disk_name', 'r2'))
+            ->acceptsMimeTypes([
+                'image/jpeg',
+                'image/png',
+                'image/webp',
+            ]);
+    }
+
+    public function registerMediaConversions(?Media $media = null): void
+    {
+        $this->addMediaConversion('card')
+            ->fit(Fit::Crop, 1200, 800)
+            ->format('webp')
+            ->performOnCollections(self::IMAGE_COLLECTION)
+            ->nonQueued();
+
+        $this->addMediaConversion('thumbnail')
+            ->fit(Fit::Crop, 480, 320)
+            ->format('webp')
+            ->performOnCollections(self::IMAGE_COLLECTION)
+            ->nonQueued();
     }
 
     #[Scope]
@@ -79,6 +115,23 @@ class Tour extends Model implements Auditable
     {
         return Attribute::make(
             get: fn (): float => round($this->duration_days / 7, 1),
+        );
+    }
+
+    /**
+     * Get the tour's ordered image payload.
+     *
+     * @return Attribute<list<array{id: int, position: int, is_cover: bool, name: string, mime_type: string|null, size_bytes: int, original_url: string, card_url: string, thumbnail_url: string}>, never>
+     */
+    protected function images(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): array => $this->getMedia(self::IMAGE_COLLECTION)
+                ->values()
+                ->map(
+                    fn (Media $media, int $index): array => TourImageData::fromMedia($media, $index + 1)->toArray(),
+                )
+                ->all(),
         );
     }
 

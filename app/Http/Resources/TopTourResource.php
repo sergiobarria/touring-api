@@ -18,6 +18,7 @@ class TopTourResource extends JsonApiResource
         'rating_avg',
         'summary',
         'difficulty',
+        'images',
     ];
 
     public function __construct(mixed $resource)

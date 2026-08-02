@@ -39,7 +39,7 @@ class TourController extends Controller
     public function index(TourListRequest $request): AnonymousResourceCollection
     {
         $tours = QueryBuilder::for(Tour::class)
-            ->with('upcomingStartDates')
+            ->with(['media', 'upcomingStartDates'])
             ->allowedIncludes(AllowedInclude::relationship('startDates'))
             ->allowedSorts(...Tour::ALLOWED_SORTS)
             ->allowedFilters(
@@ -84,7 +84,7 @@ class TourController extends Controller
     public function store(StoreTourRequest $request): JsonResponse
     {
         $tour = Tour::create($request->toDto()->toArray());
-        $tour->refresh()->load('upcomingStartDates');
+        $tour->refresh()->load(['media', 'upcomingStartDates']);
 
         return TourResource::make($tour)
             ->response()
@@ -101,7 +101,7 @@ class TourController extends Controller
     public function show(string $tour): TourResource
     {
         $tour = QueryBuilder::for(Tour::class)
-            ->with('upcomingStartDates')
+            ->with(['media', 'upcomingStartDates'])
             ->allowedIncludes(AllowedInclude::relationship('startDates'))
             ->where('is_active', true)
             ->findOrFail($tour);
@@ -135,7 +135,7 @@ class TourController extends Controller
             return $lockedTour->refresh();
         });
 
-        $tour->load('upcomingStartDates');
+        $tour->load(['media', 'upcomingStartDates']);
 
         return TourResource::make($tour);
     }

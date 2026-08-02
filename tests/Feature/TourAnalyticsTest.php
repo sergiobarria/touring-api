@@ -38,6 +38,7 @@ it('documents the fixed top tour attributes as required', function () {
             'rating_avg',
             'summary',
             'difficulty',
+            'images',
         ]);
 });
 
@@ -70,7 +71,7 @@ it('returns five top active tours with a fixed fieldset and portable null orderi
         'data' => [[
             'id',
             'type',
-            'attributes' => ['name', 'price', 'rating_avg', 'summary', 'difficulty'],
+            'attributes' => ['name', 'price', 'rating_avg', 'summary', 'difficulty', 'images'],
         ]],
     ])->assertJsonMissingPath('data.0.attributes.slug');
 });

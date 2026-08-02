@@ -10,11 +10,14 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "ext-imagick": "*",
         "dedoc/scramble": "^0.13.36",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.0",
         "owen-it/laravel-auditing": "^14.0",
+        "spatie/laravel-medialibrary": "^11.22",
         "spatie/laravel-query-builder": "^7.3",
         "spatie/laravel-sluggable": "^4.0"
     },

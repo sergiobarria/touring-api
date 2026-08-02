@@ -5,7 +5,10 @@ namespace Database\Factories;
 use App\Enums\TourDifficulty;
 use App\Models\Tour;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * @extends Factory<Tour>
@@ -41,5 +44,44 @@ class TourFactory extends Factory
             'summary' => fake()->sentence(12),
             'description' => fake()->optional(0.9)->paragraph(3, true),
         ];
+    }
+
+    /**
+     * Attach random tracked demo images after creating the tour.
+     */
+    public function withImages(int $minimum = 1, int $maximum = 2): static
+    {
+        if ($minimum < 1 || $maximum < $minimum || $maximum > Tour::MAX_IMAGES) {
+            throw new InvalidArgumentException(
+                'Image counts must satisfy 1 <= minimum <= maximum <= '.Tour::MAX_IMAGES.'.',
+            );
+        }
+
+        return $this->afterCreating(function (Tour $tour) use ($minimum, $maximum): void {
+            $imagePaths = collect(File::files(base_path('data/assets')))
+                ->filter(fn ($file): bool => in_array(
+                    strtolower($file->getExtension()),
+                    ['jpg', 'jpeg', 'png', 'webp'],
+                    strict: true,
+                ))
+                ->values();
+
+            if ($imagePaths->isEmpty()) {
+                throw new RuntimeException('No tour image fixtures were found in data/assets.');
+            }
+
+            $imageCount = fake()->numberBetween($minimum, $maximum);
+
+            for ($index = 0; $index < $imageCount; $index++) {
+                $path = $imagePaths->random()->getPathname();
+                $extension = strtolower(File::extension($path));
+
+                $tour
+                    ->copyMedia($path)
+                    ->usingName(File::name($path))
+                    ->usingFileName(Str::ulid().'.'.$extension)
+                    ->toMediaCollection(Tour::IMAGE_COLLECTION);
+            }
+        });
     }
 }

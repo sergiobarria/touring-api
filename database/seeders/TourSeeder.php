@@ -17,6 +17,7 @@ class TourSeeder extends Seeder
 
         Tour::factory()
             ->count(20)
+            ->withImages()
             ->has(TourStartDate::factory()->count($datesNum), 'startDates')
             ->create();
     }

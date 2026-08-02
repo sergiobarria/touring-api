@@ -2,11 +2,20 @@
 
 use App\Http\Controllers\Api\V1\TourAnalyticsController;
 use App\Http\Controllers\Api\V1\TourController;
+use App\Http\Controllers\Api\V1\TourImageController;
 use App\Http\Controllers\Api\V1\TourStartDateController;
 use Illuminate\Support\Facades\Route;
 
 Route::apiResource('tours', TourController::class)->only(['index', 'store', 'show', 'destroy']);
 Route::patch('tours/{tour}', [TourController::class, 'update'])->name('tours.update');
+
+Route::prefix('tours/{tour}/images')
+    ->name('tours.images.')
+    ->controller(TourImageController::class)
+    ->group(function (): void {
+        Route::post('/', 'store')->name('store');
+        Route::delete('{image}', 'destroy')->name('destroy');
+    });
 
 Route::prefix('tour-analytics')
     ->name('tour-analytics.')

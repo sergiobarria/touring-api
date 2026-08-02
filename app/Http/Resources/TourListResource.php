@@ -25,6 +25,7 @@ class TourListResource extends JsonApiResource
         'summary',
         'rating_avg',
         'rating_count',
+        'images',
     ];
 
     /**

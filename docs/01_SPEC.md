@@ -6,13 +6,13 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides a public tour catalog, CRUD operations for tours and their start dates, and read-only tour analytics. Restoration, booking, authentication, reviews, and media management are outside the current scope.
+The current implementation provides a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, authentication, and reviews are outside the current scope.
 
 ## 2. Technical conventions
 
 - The application is built with Laravel 13 and PHP 8.3 or newer.
 - PostgreSQL is the primary development and production database. Automated tests use in-memory SQLite for isolation and speed.
-- Public identifiers are ULIDs. Database sequence IDs must not be exposed.
+- Tour and tour start-date identifiers are ULIDs. Tour images expose Spatie's integer media identifier for owned image operations; no other database sequence IDs are public.
 - API routes are versioned. Version 1 is mounted below `/api/v1` and uses the `v1.` route-name prefix.
 - Responses use Laravel JSON:API resources.
 - Query filtering, sorting, and relationship inclusion use Spatie Laravel Query Builder.
@@ -22,7 +22,7 @@ The current implementation provides a public tour catalog, CRUD operations for t
 - Tour and tour start-date model changes are auditable.
 - Tour slugs are generated from tour names and must be unique.
 - Validated tour and start-date write data crosses the HTTP boundary through native readonly DTOs before model persistence.
-- All application deletion workflows use soft deletes. The application must not expose hard-delete operations.
+- Tour and tour start-date deletion workflows use soft deletes. Individual media records are hard-deleted only through the explicit owned-image endpoint after their stored files and conversions are removed.
 - Authentication is intentionally deferred during development, so the current endpoints are public. Destructive endpoints must be protected before production use.
 
 ## 3. Domain model
@@ -77,17 +77,45 @@ Soft-deleting a tour does not delete or modify its start dates. This preserves t
 
 The combination of `tour_id` and `start_datetime_utc` is unique. Inputs representing the same instant with different UTC offsets are duplicates because timestamps are normalized to UTC. Soft-deleted records continue reserving their tour and instant. A separate `start_datetime_utc` index supports analytics queries spanning every tour in a calendar year. Reducing a tour's `max_group_size` is rejected when a non-deleted start date has more available spots than the proposed maximum.
 
+### 3.3 Tour image
+
+Tour images are managed by Spatie Media Library in the `tour-images` collection and stored on the `r2` filesystem disk. A tour can contain from zero through ten images. Their collection order is their display order; the first image is the cover. Clients cannot reorder images in this iteration. Deleting an image closes the resulting position gap while preserving the relative order of the remaining images.
+
+Accepted originals are JPEG, PNG, and WebP files no larger than 10 MB each. Every upload synchronously creates these WebP conversions:
+
+| Conversion | Dimensions | Behavior |
+| --- | --- | --- |
+| `card` | 1200×800 | Centered crop. |
+| `thumbnail` | 480×320 | Centered crop. |
+
+The ordered `images` attribute appears on every tour representation. Tours without images return an empty array. Each embedded image object contains:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | integer | Spatie media identifier. |
+| `position` | integer | One-based collection position. |
+| `is_cover` | boolean | `true` only when `position` is `1`. |
+| `name` | string | Display name derived from the uploaded filename. |
+| `mime_type` | nullable string | Detected MIME type of the original. |
+| `size_bytes` | integer | Original file size in bytes. |
+| `original_url` | string | Public URL for the original. |
+| `card_url` | string | Public URL for the card conversion. |
+| `thumbnail_url` | string | Public URL for the thumbnail conversion. |
+
+Soft-deleting a tour preserves its media and R2 objects. Individual image deletion removes the original and every conversion. Storage deletion failures propagate so the database transaction can retain the media row rather than silently orphaning storage objects.
+
 ## 4. Public API conventions
 
 ### 4.1 JSON:API resource types
 
 - Tours use type `tours`.
 - Tour start dates use type `tour_start_dates`.
-- Every resource contains its ULID as `id` in addition to its `type`.
+- Standalone tour image responses use type `tour_images`.
+- Tour and start-date resources contain their ULID as `id`; tour image resources contain their integer media identifier as `id`. Every resource also contains its `type`.
 
 Internal visibility flags and timestamps are not returned as tour attributes. A start date's `is_active` value is currently part of its public resource representation.
 
-Tour and start-date write requests use a plain top-level JSON object. Responses retain the JSON:API resource representation.
+Tour and start-date write requests use a plain top-level JSON object. Image uploads use `multipart/form-data`. Responses retain the JSON:API resource representation.
 
 ### 4.2 Sparse fieldsets
 
@@ -140,6 +168,7 @@ Each list resource exposes these attributes by default:
 - `summary`
 - `rating_avg`
 - `rating_count`
+- `images`
 
 The detail-only `description` field is omitted from the list representation.
 
@@ -288,7 +317,7 @@ Example request:
 | `description` | Nullable string, maximum 65,535 characters. |
 | `is_active` | Boolean. |
 
-The server manages `id`, `slug`, ratings, timestamps, `duration_weeks`, `upcoming_dates`, and start dates. These and all unknown request fields are rejected with `422 Unprocessable Entity` rather than silently ignored. Tour creation and update do not create, replace, or remove start dates.
+The server manages `id`, `slug`, ratings, timestamps, `duration_weeks`, `upcoming_dates`, images, and start dates. These and all unknown request fields are rejected with `422 Unprocessable Entity` rather than silently ignored. Tour creation and update remain JSON-only and do not create, replace, or remove images or start dates.
 
 ### 5.5 Delete a tour
 
@@ -298,9 +327,39 @@ DELETE /api/v1/tours/{tour}
 
 `{tour}` is the tour ULID. The endpoint can delete an active or inactive tour because `is_active` controls publication rather than deletion eligibility.
 
-A successful request soft-deletes the tour by setting `deleted_at` and returns `204 No Content` with an empty body. Related start dates remain unchanged. The deleted tour is excluded from ordinary model queries and from the public list and detail endpoints.
+A successful request soft-deletes the tour by setting `deleted_at` and returns `204 No Content` with an empty body. Related start dates, media rows, and R2 objects remain unchanged. The deleted tour is excluded from ordinary model queries and from the public list and detail endpoints.
 
 Unknown, malformed, or already-deleted identifiers return `404 Not Found`. Deleted slugs remain reserved by the global unique constraint. No restore or hard-delete endpoint is currently available.
+
+### 5.6 Upload tour images
+
+```http
+POST /api/v1/tours/{tour}/images
+Content-Type: multipart/form-data
+```
+
+The request must contain one or more files under `images[]`. A single request can contain at most ten files, and the cumulative gallery cannot exceed ten images. Only JPEG, PNG, and WebP files up to 10 MB each are accepted. Unknown fields are rejected.
+
+```shell
+curl -X POST "${APP_URL}/api/v1/tours/${TOUR_ID}/images" \
+  -H 'Accept: application/json' \
+  -F 'images[]=@/path/to/cover.jpg' \
+  -F 'images[]=@/path/to/gallery.webp'
+```
+
+A successful upload returns `201 Created` with a JSON:API collection containing only the newly created `tour_images` resources. Each resource uses its media identifier as `id` and exposes `position`, `is_cover`, `name`, `mime_type`, `size_bytes`, `original_url`, `card_url`, and `thumbnail_url` below `attributes`.
+
+Multi-file uploads are all-or-nothing from the API's perspective. If storage or synchronous conversion fails, the database transaction is rolled back and cleanup is attempted for files created earlier in the request.
+
+The endpoint accepts active and inactive tours. Unknown, malformed, or soft-deleted tour identifiers return `404 Not Found`.
+
+### 5.7 Delete a tour image
+
+```http
+DELETE /api/v1/tours/{tour}/images/{image}
+```
+
+The media identifier must belong to the specified tour and its `tour-images` collection. A successful request removes the original and conversions, hard-deletes the media row, normalizes the remaining positions, and returns `204 No Content`. A mismatched owner, unknown image, unknown tour, or soft-deleted tour returns `404 Not Found`.
 
 ## 6. Tour start-date endpoints
 
@@ -376,7 +435,7 @@ Tour analytics are public, read-only views of the active catalog. All analytics 
 GET /api/v1/tour-analytics/top-tours
 ```
 
-Returns at most five JSON:API `tours` resources. Rated tours are ordered by `rating_avg` descending, then `price` ascending, and finally ULID ascending. Tours without a rating are ordered after all rated tours. Each resource exposes only `name`, `price`, `rating_avg`, `summary`, and `difficulty`; request query parameters cannot alter this fieldset or ordering.
+Returns at most five JSON:API `tours` resources. Rated tours are ordered by `rating_avg` descending, then `price` ascending, and finally ULID ascending. Tours without a rating are ordered after all rated tours. Each resource exposes only `name`, `price`, `rating_avg`, `summary`, `difficulty`, and `images`; request query parameters cannot alter this fieldset or ordering.
 
 ### 7.2 Get tour statistics
 
@@ -439,6 +498,7 @@ When no departures qualify, `plan` is an empty array.
 - Successful partial updates return `200 OK` with the updated detail resource.
 - A successful tour deletion returns `204 No Content` with an empty body.
 - Successful start-date creation, update, and deletion return `201 Created`, `200 OK`, and `204 No Content`, respectively.
+- Successful image upload and deletion return `201 Created` and `204 No Content`, respectively.
 - Invalid list or write input, unknown write fields, and empty PATCH requests return `422 Unprocessable Entity` with Laravel validation errors.
 - Unsupported filters, sorts, or includes return `400 Bad Request`.
 - A missing, inactive, unknown, malformed, or soft-deleted tour identifier on the detail endpoint returns `404 Not Found`.
@@ -446,6 +506,8 @@ When no departures qualify, `plan` is an empty array.
 - An unknown, malformed, or soft-deleted tour identifier on the PATCH endpoint returns `404 Not Found`.
 - PUT is not registered for tours and returns `405 Method Not Allowed`.
 - Missing parents, mismatched ownership, and unknown, malformed, or soft-deleted start dates return `404 Not Found`.
+- Missing or soft-deleted tour parents, mismatched image ownership, and unknown images return `404 Not Found` for image writes.
+- Empty image uploads, unsupported image types, files over 10 MB, cumulative galleries over ten images, and unknown upload fields return `422 Unprocessable Entity`.
 - PUT is not registered for start dates and returns `405 Method Not Allowed`.
 - Invalid monthly-plan years return `422 Unprocessable Entity`.
 
@@ -453,7 +515,7 @@ When no departures qualify, `plan` is an empty array.
 
 `routes/api.php` is the API version dispatcher. Version 1 routes are defined in `routes/api_v1.php` and mounted with the `v1` URL and route-name prefixes.
 
-These tour and start-date routes are currently public:
+These routes are currently public:
 
 | Method | URI | Purpose |
 | --- | --- | --- |
@@ -462,6 +524,8 @@ These tour and start-date routes are currently public:
 | `GET` | `/api/v1/tours/{tour}` | Retrieve one active tour by ULID. |
 | `PATCH` | `/api/v1/tours/{tour}` | Partially update an active or inactive tour. |
 | `DELETE` | `/api/v1/tours/{tour}` | Soft-delete an active or inactive tour by ULID. |
+| `POST` | `/api/v1/tours/{tour}/images` | Upload one or more images to an active or inactive tour. |
+| `DELETE` | `/api/v1/tours/{tour}/images/{image}` | Delete an owned tour image and its conversions. |
 | `GET` | `/api/v1/tours/{tour}/start-dates` | List all non-deleted start dates for a tour. |
 | `POST` | `/api/v1/tours/{tour}/start-dates` | Create a start date for a tour. |
 | `GET` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Retrieve an owned start date. |
@@ -476,13 +540,13 @@ Scramble exposes version-specific OpenAPI documentation:
 - Interactive documentation: `/docs/v1`
 - OpenAPI document: `/docs/v1.json`
 - Documented server base path: `/api/v1`
-- Tour operations are grouped under `Tours`, start-date operations under `Tour Start Dates`, and analytics under `Tour Analytics`.
+- Tour operations are grouped under `Tours`, image operations under `Tour Images`, start-date operations under `Tour Start Dates`, and analytics under `Tour Analytics`.
 
 The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so documentation cannot mix API versions.
 
 ## 10. Development data
 
-The development seeder creates 20 tours, each with between three and five start dates. It runs only in the `local` environment.
+The development seeder creates 20 tours, each with between three and five start dates and one or two randomly selected images. It runs only in the `local` environment.
 
 Tour factory data follows these rules:
 
@@ -493,10 +557,43 @@ Tour factory data follows these rules:
 - Base price ranges from 299.00 to 2999.00.
 - A discount is generated about 30% of the time and uses a realistic increment: 5%, 10%, 15%, 20%, or 25%.
 - A tour has ratings about 80% of the time. Rated tours receive an average from 3.50 to 5.00 and a positive rating count; unrated tours receive a null average and zero count.
+- The opt-in `withImages(minimum: 1, maximum: 2)` factory state copies randomly selected JPEG, PNG, or WebP fixtures from `data/assets` into the configured media disk. Source fixtures remain unchanged, and invalid ranges or a missing fixture set fail explicitly.
 
 Generated start dates occur from 1 to 180 days in the future, use UTC, add a randomized daytime hour and either zero or 30 minutes, and are active about 90% of the time.
 
-## 11. Acceptance and verification
+## 11. R2 media configuration and cleanup
+
+Spatie Media Library stores originals and conversions on the `r2` disk. Configure these variables locally; credentials must never be committed:
+
+```dotenv
+IMAGE_DRIVER=imagick
+MEDIA_DISK=r2
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+R2_ENDPOINT=
+R2_URL=https://pub-0b685df326cd47c6a26c9f3ca20af7f8.r2.dev
+R2_REGION=auto
+```
+
+`R2_ENDPOINT` is the account's authenticated S3-compatible API endpoint used for storage operations. `R2_URL` is the public base URL returned in API payloads. Development currently uses the configured `r2.dev` URL; production can use a custom public domain without code changes. The filesystem is configured to throw and report storage failures.
+
+The cleanup command is restricted to the `local` and `testing` environments and targets the entire configured R2 bucket, not only one tour:
+
+```shell
+# Inspect the object count, total size, and matching media-row count.
+php artisan r2:purge-media
+
+# Purge after interactive confirmation.
+php artisan r2:purge-media --execute
+
+# Purge without confirmation for non-interactive local/testing workflows.
+php artisan r2:purge-media --execute --force
+```
+
+Execution deletes every object, verifies the bucket is empty, and only then deletes media rows whose original or conversions disk is `r2`. If inspection, deletion, or verification fails, the command exits unsuccessfully and retains the database rows. It refuses staging and production even when `--force` is supplied.
+
+## 12. Acceptance and verification
 
 Feature coverage must verify:
 
@@ -523,6 +620,11 @@ Feature coverage must verify:
 - Fixed top-tour limits, fieldsets, null placement, ordering, and active-only visibility.
 - Tour-stat grouping, thresholds, aggregate values, numeric normalization, ordering, and empty results.
 - Monthly-plan UTC boundaries, grouping, repeated names, deterministic ordering, historical dates, visibility exclusions, year validation, and empty results.
+- Ordered images and cover selection in tour list, detail, write, and top-tour analytics payloads without N+1 queries.
+- Single and multi-file uploads, synchronous conversions, public URLs, cumulative limits, MIME and size validation, and atomic failure cleanup.
+- Owned image deletion, file and conversion removal, normalized positions, storage-failure rollback, and preservation after tour soft deletion.
+- Factory and seeder fixture handling without moving source assets.
+- R2 purge dry-run immutability, confirmation and force modes, object verification, media-row cleanup, failure handling, and production refusal.
 
 Use the following commands during verification:
 
@@ -533,13 +635,14 @@ php artisan scramble:analyze --api=v1
 php artisan scramble:export --api=v1
 ```
 
-## 12. Deferred scope
+## 13. Deferred scope
 
 The following capabilities are intentionally not part of the current public contract and must be specified before implementation:
 
 - Restoring soft-deleted tours or start dates.
 - Authentication and authorization.
-- Tour images or media.
+- Client-controlled image reordering.
+- Direct or presigned uploads and queued image conversions.
 - Reviews and rating submission.
 - Booking and inventory workflows.
 - Discounted-price calculation or promotion rules.
