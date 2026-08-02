@@ -1,10 +1,20 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\TourAnalyticsController;
 use App\Http\Controllers\Api\V1\TourController;
 use App\Http\Controllers\Api\V1\TourImageController;
 use App\Http\Controllers\Api\V1\TourStartDateController;
 use Illuminate\Support\Facades\Route;
+
+Route::prefix('auth')
+    ->name('auth.')
+    ->controller(AuthController::class)
+    ->group(function (): void {
+        Route::post('register', 'register')->middleware('throttle:5,1')->name('register');
+        Route::post('login', 'login')->name('login');
+        Route::post('logout', 'logout')->middleware('auth:sanctum')->name('logout');
+    });
 
 Route::apiResource('tours', TourController::class)->only(['index', 'store', 'show', 'destroy']);
 Route::patch('tours/{tour}', [TourController::class, 'update'])->name('tours.update');

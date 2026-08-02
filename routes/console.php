@@ -11,5 +11,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('telescope:prune')->daily();
+Schedule::command('sanctum:prune-expired --hours=24')->daily();
 Schedule::command(RunHealthChecksCommand::class)->everyMinute()->withoutOverlapping();
 Schedule::command('model:prune', ['--model' => HealthCheckResultHistoryItem::class])->daily();

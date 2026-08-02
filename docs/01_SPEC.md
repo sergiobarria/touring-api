@@ -6,7 +6,7 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, authentication, and reviews are outside the current scope.
+The current implementation provides Sanctum API-token authentication, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and read-only tour analytics. Restoration, booking, authorization policies, and reviews are outside the current scope.
 
 ## 2. Technical conventions
 
@@ -23,8 +23,10 @@ The current implementation provides a public tour catalog, CRUD operations for t
 - Tour and tour start-date model changes are auditable.
 - Tour slugs are generated from tour names and must be unique.
 - Validated tour and start-date write data crosses the HTTP boundary through native readonly DTOs before model persistence.
+- HTTP controllers accept validated input, delegate application use cases to actions, and serialize responses. Each action represents one use case; reusable capabilities shared by actions belong in focused services, while stable typed results or inputs use readonly DTOs.
+- Authentication is the first feature implemented with this pattern: register, login, and logout delegate to dedicated actions, and token issuance and current-token revocation share an access-token service.
 - Tour and tour start-date deletion workflows use soft deletes. Individual media records are hard-deleted only through the explicit owned-image endpoint after their stored files and conversions are removed.
-- Authentication is intentionally deferred during development, so the current endpoints are public. Destructive endpoints must be protected before production use.
+- Authentication uses Laravel Sanctum personal access tokens supplied through the Bearer authorization scheme. Tour endpoints remain public until authorization policies are defined; destructive endpoints must be protected before production use.
 
 ### 2.1 Operational health
 
@@ -35,7 +37,7 @@ The application exposes two unversioned, public health endpoints that are intent
 
 The readiness checks run every minute and their ULID-keyed results are retained in the database for seven days. The public endpoint only reads the latest scheduled result batch and treats results older than two minutes as unhealthy; requests, including those with a `fresh` query parameter, do not execute checks or write history. Notifications are disabled. Local, testing, and other non-production environments check only the default database connection. Production additionally verifies that disk usage is below the package's warning and failure thresholds of 70% and 90%, `APP_ENV` is `production`, and debug mode is disabled.
 
-Local development runs Laravel's scheduler through `composer run dev`. Production infrastructure must invoke `php artisan schedule:run` once per minute.
+Local development runs Laravel's scheduler through `composer run dev`. Production infrastructure must invoke `php artisan schedule:run` once per minute. Expired Sanctum token records are pruned daily after they have been expired for 24 hours.
 
 ## 3. Domain model
 
@@ -116,6 +118,12 @@ The ordered `images` attribute appears on every tour representation. Tours witho
 
 Soft-deleting a tour preserves its media and R2 objects. Individual image deletion removes the original and every conversion. Storage deletion failures propagate so the database transaction can retain the media row rather than silently orphaning storage objects.
 
+### 3.4 User and API token
+
+A user has a ULID primary key, name, unique lowercase email address, hashed password, nullable verification timestamp, and timestamps. Authentication responses expose only the user's ULID, name, and email address.
+
+Users can have multiple Sanctum personal access tokens, one for each registration or login. Every token uses the internal name `auth-token` and stores a hash of the secret, wildcard abilities, its owning user ULID, and a 30-day expiration timestamp. The plaintext token is returned only when it is created. Logging out deletes only the token used for that request, leaving other tokens valid.
+
 ## 4. Public API conventions
 
 ### 4.1 JSON:API resource types
@@ -123,7 +131,8 @@ Soft-deleting a tour preserves its media and R2 objects. Individual image deleti
 - Tours use type `tours`.
 - Tour start dates use type `tour_start_dates`.
 - Standalone tour image responses use type `tour_images`.
-- Tour and start-date resources contain their ULID as `id`; tour image resources contain their integer media identifier as `id`. Every resource also contains its `type`.
+- Users use type `users`.
+- User, tour, and start-date resources contain their ULID as `id`; tour image resources contain their integer media identifier as `id`. Every resource also contains its `type`.
 
 Internal visibility flags and timestamps are not returned as tour attributes. A start date's `is_active` value is currently part of its public resource representation.
 
@@ -155,6 +164,55 @@ GET /api/v1/tours/{tour}?include=startDates
 When requested, `relationships.startDates.data` contains resource identifiers and the complete start-date resources appear in the top-level `included` array. If `startDates` is not included, its full attributes are not side-loaded. This is intentional JSON:API behavior.
 
 Unsupported includes return `400 Bad Request`.
+
+### 4.4 Authentication endpoints
+
+Authentication requests use plain top-level JSON objects. Successful registration and login responses use a JSON:API `users` resource plus top-level token metadata:
+
+```json
+{
+  "data": {
+    "type": "users",
+    "id": "01K2EXAMPLEUSERULID0000000",
+    "attributes": {
+      "name": "Jane Doe",
+      "email": "jane@example.com"
+    }
+  },
+  "meta": {
+    "access_token": "1|plain-text-token",
+    "token_type": "Bearer",
+    "expires_at": "2026-09-01T12:00:00+00:00"
+  }
+}
+```
+
+#### Register
+
+```http
+POST /api/v1/auth/register
+```
+
+The request requires `name`, `email`, `password`, and `password_confirmation`. Emails are trimmed and normalized to lowercase before validation, and passwords use the application's default Laravel password rules and must be confirmed. Unknown fields, including `device_name`, are rejected. A successful request atomically creates the user and 30-day token and returns `201 Created`.
+
+Registration is limited to five requests per IP address per minute.
+
+#### Login
+
+```http
+POST /api/v1/auth/login
+```
+
+The request requires `email` and `password`. Unknown fields, including `device_name`, are rejected. A successful request returns `200 OK` with a new independent 30-day token; existing tokens remain valid. Unknown users and incorrect passwords return the same generic validation error to avoid account enumeration. Five failed attempts for the same normalized email and IP address within one minute cause subsequent attempts to return `429 Too Many Requests`; a successful login clears that failure counter.
+
+#### Logout
+
+```http
+POST /api/v1/auth/logout
+Authorization: Bearer <token>
+```
+
+Logout requires `auth:sanctum`, deletes the current token, and returns `204 No Content`. Missing, malformed, expired, and previously revoked tokens return `401 Unauthorized`. Other tokens owned by the same user remain valid.
 
 ## 5. Tour endpoints
 
@@ -505,6 +563,11 @@ When no departures qualify, `plan` is an empty array.
 
 ## 8. Errors and validation
 
+- Successful registration and login return `201 Created` and `200 OK`, respectively, with the user resource and one-time plaintext token metadata.
+- Successful logout returns `204 No Content` and revokes only the current token.
+- Invalid authentication input, duplicate emails, and incorrect credentials return `422 Unprocessable Entity`; incorrect credentials never distinguish an unknown email from a wrong password.
+- Missing, malformed, expired, and revoked Bearer tokens return `401 Unauthorized` on protected endpoints.
+- Authentication rate-limit lockouts return `429 Too Many Requests` with retry information.
 - Successful list and detail requests return `200 OK`.
 - Successful tour creation returns `201 Created`, a detail resource, and a `Location` header.
 - Successful partial updates return `200 OK` with the updated detail resource.
@@ -531,6 +594,8 @@ These routes are currently public:
 
 | Method | URI | Purpose |
 | --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | Create a user and issue an API token. |
+| `POST` | `/api/v1/auth/login` | Exchange credentials for an API token. |
 | `GET` | `/api/v1/tours` | List active tours. |
 | `POST` | `/api/v1/tours` | Create a tour. |
 | `GET` | `/api/v1/tours/{tour}` | Retrieve one active tour by ULID. |
@@ -547,12 +612,19 @@ These routes are currently public:
 | `GET` | `/api/v1/tour-analytics/stats` | Summarize highly rated active tours by difficulty. |
 | `GET` | `/api/v1/tour-analytics/monthly-plan/{year}` | Group active departures by month in a UTC year. |
 
+The authenticated routes are:
+
+| Method | URI | Middleware | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/auth/logout` | `auth:sanctum` | Revoke the current Bearer token. |
+
 Scramble exposes version-specific OpenAPI documentation:
 
 - Interactive documentation: `/docs/v1`
 - OpenAPI document: `/docs/v1.json`
 - Documented server base path: `/api/v1`
-- Tour operations are grouped under `Tours`, image operations under `Tour Images`, start-date operations under `Tour Start Dates`, and analytics under `Tour Analytics`.
+- Authentication operations are grouped under `Authentication`, tour operations under `Tours`, image operations under `Tour Images`, start-date operations under `Tour Start Dates`, and analytics under `Tour Analytics`.
+- Scramble documents Sanctum-protected operations with the Bearer security scheme and explicitly marks unprotected operations as public.
 
 The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so documentation cannot mix API versions.
 
@@ -609,6 +681,9 @@ Execution deletes every object, verifies the bucket is empty, and only then dele
 
 Feature coverage must verify:
 
+- Registration validation, lowercase email uniqueness, password hashing, ULID users, immediate token issuance, and response secrecy.
+- Valid and invalid login behavior, generic credential failures, independent concurrent tokens, fixed internal token naming, and failed-attempt throttling.
+- Bearer authentication, 30-day expiration, current-token logout, preservation of other tokens, and daily expired-token pruning.
 - Active-only list and detail visibility.
 - Default, ascending, descending, and multi-column ordering.
 - Partial text, exact value, and inclusive price-range filters.
@@ -652,7 +727,8 @@ php artisan scramble:export --api=v1
 The following capabilities are intentionally not part of the current public contract and must be specified before implementation:
 
 - Restoring soft-deleted tours or start dates.
-- Authentication and authorization.
+- Authorization policies, roles, granular token abilities, and protection of tour endpoints.
+- Email verification, password reset, refresh tokens, token listing, and revoke-all workflows.
 - Client-controlled image reordering.
 - Direct or presigned uploads and queued image conversions.
 - Reviews and rating submission.

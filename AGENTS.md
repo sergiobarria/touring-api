@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Laravel 13 REST API. Application code belongs in `app/`; controllers live in `app/Http/Controllers`, models in `app/Models`, and providers in `app/Providers`. Define API endpoints in `routes/api.php` and browser routes in `routes/web.php`. Migrations, factories, and seeders are under `database/`. Vite compiles `resources/js/app.js` and `resources/css/app.css` to `public/`. Keep feature tests in `tests/Feature`, unit tests in `tests/Unit`, fixture/import data in `data/`, and requirements in `docs/`.
+This is a Laravel 13 REST API. Application code belongs in `app/`; controllers live in `app/Http/Controllers`, application actions in `app/Actions/<Domain>`, reusable domain services in `app/Services/<Domain>`, DTOs in `app/DataTransferObjects`, models in `app/Models`, and providers in `app/Providers`. Define API endpoints in `routes/api.php` and browser routes in `routes/web.php`. Migrations, factories, and seeders are under `database/`. Vite compiles `resources/js/app.js` and `resources/css/app.css` to `public/`. Keep feature tests in `tests/Feature`, unit tests in `tests/Unit`, fixture/import data in `data/`, and requirements in `docs/`.
 
 ## Build, Test, and Development Commands
 
@@ -15,7 +15,11 @@ This is a Laravel 13 REST API. Application code belongs in `app/`; controllers l
 
 ## Coding Style & Naming Conventions
 
-Follow `.editorconfig`: UTF-8, LF endings, four-space indentation (two spaces for YAML), and a final newline. Follow PSR-4 namespaces (`App\` maps to `app/`) and Laravel conventions: `TourController`, singular models such as `Tour`, plural database tables, and timestamped snake-case migrations. Use explicit parameter and return types, descriptive method names, constructor property promotion, and braces for every control structure. Prefer Artisan generators, for example `php artisan make:controller TourController --no-interaction`.
+Follow `.editorconfig`: UTF-8, LF endings, four-space indentation (two spaces for YAML), and a final newline. Follow PSR-4 namespaces (`App\` maps to `app/`) and Laravel conventions: `TourController`, singular models such as `Tour`, plural database tables, and timestamped snake-case migrations. Use explicit parameter, return, property, and class-constant types; for example, write `private const string TOKEN_NAME = 'auth-token';` instead of an untyped constant. Declare classes `readonly` when their instance state is immutable, and avoid redundant `readonly` modifiers on properties of a readonly class. Use descriptive method names, constructor property promotion, and braces for every control structure. Prefer Artisan generators, for example `php artisan make:controller TourController --no-interaction`.
+
+## Application Architecture
+
+Keep controllers thin: accept validated requests, delegate application behavior, and serialize the result. Put each use case in a dedicated action with a typed `handle(...)` method under `app/Actions/<Domain>`. Extract a service under `app/Services/<Domain>` only when a capability is shared by actions or represents a meaningful integration boundary; do not create a service merely to relocate one action's implementation. Prefer concrete constructor or method injection through Laravel's container. Add interfaces only when multiple implementations or a real external boundary justify them. Use readonly DTOs when inputs or results benefit from a stable typed boundary.
 
 ## Testing Guidelines
 

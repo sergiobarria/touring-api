@@ -2,6 +2,8 @@
 
 namespace App\OpenApi;
 
+use App\Http\Requests\Api\V1\LoginRequest;
+use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Http\Requests\Api\V1\StoreTourImagesRequest;
 use App\Http\Requests\Api\V1\StoreTourRequest;
 use App\Http\Requests\Api\V1\StoreTourStartDateRequest;
@@ -18,6 +20,8 @@ final class ConfigureTourWriteSchemas implements DocumentTransformer
 {
     public function handle(OpenApi $document, OpenApiContext $context): void
     {
+        $this->makeRequestSchemaStrict($document, RegisterRequest::class);
+        $this->makeRequestSchemaStrict($document, LoginRequest::class);
         $this->makeRequestSchemaStrict($document, StoreTourRequest::class);
         $this->makeRequestSchemaStrict($document, UpdateTourRequest::class, minimumProperties: 1);
         $this->makeRequestSchemaStrict($document, StoreTourStartDateRequest::class);
