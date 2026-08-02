@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Models\User;
 use App\OpenApi\ConfigureTourWriteSchemas;
+use App\Services\Payments\StripeGateway;
+use App\Services\Payments\StripePaymentGateway;
 use Dedoc\Scramble\Scramble;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
@@ -17,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(StripeGateway::class, StripePaymentGateway::class);
         Scramble::ignoreDefaultRoutes();
 
         if ($this->app->environment('local') && class_exists(\Laravel\Telescope\TelescopeServiceProvider::class)) {

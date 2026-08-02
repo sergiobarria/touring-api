@@ -3,6 +3,7 @@
 namespace App\Actions\Reviews;
 
 use App\DataTransferObjects\ReviewData;
+use App\Enums\BookingStatus;
 use App\Models\Review;
 use App\Models\Tour;
 use App\Models\User;
@@ -22,6 +23,13 @@ final readonly class CreateTourReview
         try {
             return DB::transaction(function () use ($tour, $user, $data): Review {
                 $lockedTour = Tour::query()->lockForUpdate()->findOrFail($tour->getKey());
+                if (! $user->bookings()->whereBelongsTo($lockedTour)
+                    ->where('status', BookingStatus::CONFIRMED)
+                    ->where('departure_datetime_utc', '<', now('UTC'))->exists()) {
+                    throw ValidationException::withMessages([
+                        'review' => 'You can review a tour only after completing a booked departure.',
+                    ]);
+                }
                 $review = $lockedTour->reviews()->create([
                     ...$data->toArray(),
                     'user_id' => $user->getKey(),

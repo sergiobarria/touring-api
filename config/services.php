@@ -22,6 +22,15 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    'stripe' => [
+        'secret' => env('STRIPE_SECRET_KEY'),
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'currency' => env('STRIPE_CURRENCY', 'usd'),
+        'checkout_hold_minutes' => env('STRIPE_CHECKOUT_HOLD_MINUTES', 30),
+        'cancellation_cutoff_hours' => env('BOOKING_CANCELLATION_CUTOFF_HOURS', 48),
+        'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

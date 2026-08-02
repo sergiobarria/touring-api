@@ -6,7 +6,7 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides Sanctum API-token authentication, email verification, password management, permission-protected tour administration, tour-level guide teams, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, authenticated owner-managed tour reviews, and admin-only tour analytics. Restoration and booking are outside the current scope.
+The current implementation provides Sanctum API-token authentication, email verification, password management, permission-protected tour administration, tour-level guide teams, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, Stripe-backed authenticated bookings, purchase-qualified reviews, and admin-only tour analytics. Restoration remains outside the current scope.
 
 ## 2. Technical conventions
 
@@ -97,13 +97,14 @@ A tour can have many scheduled start dates. Each start date belongs to exactly o
 | `tour_id` | ULID | Foreign key to `tours.id`. |
 | `start_datetime_utc` | timestamp | Scheduled start in UTC. |
 | `available_spots` | unsigned integer | Remaining capacity; defaults to `0` and cannot exceed the tour's `max_group_size`. |
+| `reserved_spots` | unsigned integer | Internal count of spots held by pending or confirmed bookings; defaults to `0` and is not client-writable. |
 | `is_active` | boolean | Whether this departure is active; defaults to `true`. |
 | `created_at`, `updated_at` | timestamps | Internal lifecycle timestamps. |
 | `deleted_at` | nullable timestamp | Marks a soft-deleted start date; `null` means it has not been deleted. |
 
 Soft-deleting a tour does not delete or modify its start dates. This preserves the complete schedule for a future restoration. The database foreign key retains a cascading hard-delete constraint as an integrity fallback, but application workflows must not invoke it.
 
-The combination of `tour_id` and `start_datetime_utc` is unique. Inputs representing the same instant with different UTC offsets are duplicates because timestamps are normalized to UTC. Soft-deleted records continue reserving their tour and instant. A separate `start_datetime_utc` index supports analytics queries spanning every tour in a calendar year. Reducing a tour's `max_group_size` is rejected when a non-deleted start date has more available spots than the proposed maximum.
+The combination of `tour_id` and `start_datetime_utc` is unique. Inputs representing the same instant with different UTC offsets are duplicates because timestamps are normalized to UTC. Soft-deleted records continue reserving their tour and instant. A separate `start_datetime_utc` index supports analytics queries spanning every tour in a calendar year. Available plus reserved spots may never exceed the tour maximum; start-date edits and tour capacity reductions enforce this invariant.
 
 ### 3.3 Tour image
 
@@ -147,7 +148,7 @@ A review belongs to exactly one tour and one user. A user may review a given tou
 
 Reviews are hard-deleted so an author may submit another later. Soft-deleting a tour preserves its reviews but makes its nested review endpoints unreachable. Permanently deleting a user removes that user's reviews and atomically recomputes each affected tour aggregate.
 
-Purchase and completion checks are deferred until bookings exist. For now, any authenticated user may review any active or inactive, non-deleted tour.
+A review may be created only when its author owns a confirmed booking for the tour whose snapshotted departure instant is in the past. This requirement is rechecked inside the review transaction.
 
 ### 3.5 User and API token
 
@@ -194,6 +195,16 @@ Role replacement and deletion are forbidden for the currently authenticated admi
 Account identity remains on the `users` table because the current editable fields are only `name` and `email`; a separate one-to-one profile record would add lifecycle and consistency overhead without storing distinct profile-domain data. A profile table should be introduced later only when fields such as biography, avatar preferences, locale, or guide-specific public information establish a meaningful independent profile boundary.
 
 Every authenticated role can update its own name or email. Name changes do not require password confirmation. Email changes require `current_password`, normalize the new address, enforce uniqueness, clear `email_verified_at`, and invalidate password-reset tokens for both the old and new addresses atomically before queuing a new verification notification after commit. Submitting the same normalized email leaves verification unchanged. Password changes remain isolated on `PUT /api/v1/auth/password` and are not accepted by the profile endpoint. Password and profile updates share the named account-update limiter to constrain current-password guessing with a compromised token.
+
+### 3.11 Booking and traveler
+
+A booking belongs to one verified user, one tour, and one tour start date. It snapshots the tour name, departure instant, purchaser identity, discount, USD unit price, total, and traveler roster so later catalog edits do not change the purchase record. Money is stored as integer cents. Effective unit price applies the tour percentage discount and rounds half-up to the nearest cent.
+
+Booking statuses are `pending_payment`, `confirmed`, `cancellation_pending`, `cancelled`, `expired`, and `cancellation_failed`. Each traveler has a full name, RFC-valid email, and E.164 phone number; traveler count is the ticket quantity. Booking and Stripe identifiers are unique, and a user-scoped hash of the required client idempotency key prevents duplicate holds. Users with booking history cannot be deleted.
+
+Creating a paid booking locks its active future departure, atomically consumes the requested spots, and holds them for 30 minutes while a card-only USD Stripe Checkout Session is open. Free and fully discounted bookings confirm without Stripe. Paid fulfillment occurs only from a signed, matching `checkout.session.completed` webhook. Expiration restores seats exactly once through the webhook or the minutely recovery command.
+
+Confirmed bookings may be cancelled in full through 48 hours before the snapshotted departure. Free cancellations complete synchronously. Paid cancellations remain pending until Stripe reports a successful full refund; only then are seats restored. Failed refunds preserve capacity and permit another cancellation attempt based on the original timely request.
 
 ## 4. Public API conventions
 
@@ -645,11 +656,35 @@ DELETE /api/v1/tours/{tour}/reviews/{review}
 
 The owner may hard-delete the review and receives `204 No Content`. The user can subsequently submit a replacement review. Create, update, and delete recompute the tour's rating count and average atomically.
 
-## 8. Tour analytics endpoints
+## 8. Booking endpoints
+
+All booking endpoints require Sanctum authentication and return `Cache-Control: no-store`. Creation additionally requires a verified email and a UUID `Idempotency-Key` header.
+
+- `POST /api/v1/bookings` accepts `tour_start_date_id` and one through 255 `travelers`. It returns `201 Created` for a new booking and `200 OK` for an identical replay. Reusing a key with different input returns `409 Conflict`.
+- `GET /api/v1/bookings` returns the current user's bookings newest first with standard `page` and `per_page` pagination.
+- `GET /api/v1/bookings/{booking}` returns an owned booking, traveler roster, checkout URL only while payment is pending, price/departure snapshots, status timestamps, and cancellation eligibility. Other users receive `404 Not Found`.
+- `POST /api/v1/bookings/{booking}/cancel` cancels the whole booking under the configured cutoff; partial cancellation and edits are unsupported.
+- `POST /api/v1/stripe/webhook` is public, signature-verified against the raw request body, independently rate-limited, and idempotent by Stripe event ID. It consumes `checkout.session.completed`, `checkout.session.expired`, `refund.updated`, and `refund.failed`.
+
+The scheduler runs `bookings:expire-holds` every minute and `bookings:reconcile-refunds` every ten minutes. Confirmation, cancellation-success, and cancellation-failure notifications are encrypted queued jobs dispatched after commit.
+
+Stripe configuration is:
+
+```dotenv
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_CURRENCY=usd
+STRIPE_CHECKOUT_HOLD_MINUTES=30
+BOOKING_CANCELLATION_CUTOFF_HOURS=48
+```
+
+Hosted Checkout success and cancellation URLs are derived from `FRONTEND_URL`; no publishable key is required.
+
+## 9. Tour analytics endpoints
 
 Tour analytics are admin-only, read-only views of the active catalog protected by `tours.view-analytics`. All analytics exclude inactive and soft-deleted tours. Monthly analytics additionally exclude inactive and soft-deleted start dates. These endpoints have fixed behavior and do not expose pagination, filtering, custom sorting, includes, or sparse fieldsets.
 
-### 8.1 List top tours
+### 9.1 List top tours
 
 ```http
 GET /api/v1/tour-analytics/top-tours
@@ -657,7 +692,7 @@ GET /api/v1/tour-analytics/top-tours
 
 Returns at most five JSON:API `tours` resources. Rated tours are ordered by `rating_avg` descending, then `price` ascending, and finally ULID ascending. Tours without a rating are ordered after all rated tours. Each resource exposes only `name`, `price`, `rating_avg`, `summary`, `difficulty`, and `images`; request query parameters cannot alter this fieldset or ordering.
 
-### 8.2 Get tour statistics
+### 9.2 Get tour statistics
 
 ```http
 GET /api/v1/tour-analytics/stats
@@ -685,7 +720,7 @@ Includes tours with `rating_avg >= 4.5`, groups them by difficulty, and orders g
 
 When no tours qualify, `stats` is an empty array.
 
-### 8.3 Get a monthly tour plan
+### 9.3 Get a monthly tour plan
 
 ```http
 GET /api/v1/tour-analytics/monthly-plan/{year}
@@ -711,7 +746,7 @@ The endpoint includes active departures from the inclusive start through the inc
 
 When no departures qualify, `plan` is an empty array.
 
-## 9. Errors and validation
+## 10. Errors and validation
 
 - Successful registration and login return `201 Created` and `200 OK`, respectively, with the user resource and one-time plaintext token metadata.
 - Successful logout returns `204 No Content` and revokes only the current token.
@@ -741,7 +776,7 @@ When no departures qualify, `plan` is an empty array.
 - Review writes require authentication; non-owner review updates and deletes return `403 Forbidden`. Mismatched nested reviews and soft-deleted parents return `404 Not Found`. PUT is not registered for reviews.
 - Invalid monthly-plan years return `422 Unprocessable Entity`.
 
-## 10. Routing and documentation
+## 11. Routing and documentation
 
 `routes/api.php` is the API version dispatcher. Version 1 routes are defined in `routes/api_v1.php` and mounted with the `v1` URL and route-name prefixes.
 
@@ -796,7 +831,7 @@ Scramble exposes version-specific OpenAPI documentation:
 
 The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so documentation cannot mix API versions.
 
-## 11. Development data
+## 12. Development data
 
 `DatabaseSeeder` always runs `PermissionSeeder` followed by `RoleSeeder`. In the local environment it then creates ten lead guides, twenty-five supporting guides, and twenty-five regular users before loading tour and review fixtures. Automated feature tests seed canonical authorization data when protected behavior is exercised.
 
@@ -815,7 +850,7 @@ Tour factory data follows these rules:
 
 Generated start dates occur from 1 to 180 days in the future, use UTC, add a randomized daytime hour and either zero or 30 minutes, and are active about 90% of the time.
 
-## 12. R2 media configuration and cleanup
+## 13. R2 media configuration and cleanup
 
 Spatie Media Library stores originals and conversions on the `r2` disk. Configure these variables locally; credentials must never be committed:
 
@@ -847,7 +882,7 @@ php artisan r2:purge-media --execute --force
 
 Execution deletes every object, verifies the bucket is empty, and only then deletes media rows whose original or conversions disk is `r2`. If inspection, deletion, or verification fails, the command exits unsuccessfully and retains the database rows. It refuses staging and production even when `--force` is supplied.
 
-## 13. Acceptance and verification
+## 14. Acceptance and verification
 
 Feature coverage must verify:
 
@@ -883,6 +918,7 @@ Feature coverage must verify:
 - Owned image deletion, file and conversion removal, normalized positions, storage-failure rollback, and preservation after tour soft deletion.
 - Factory and seeder fixture handling without moving source assets.
 - Public review reads, authenticated writes, ownership authorization, nested ownership, one-review uniqueness, validation, deterministic pagination, aggregate recomputation, account-deletion cleanup, and coherent review seed fixtures.
+- Verified-user booking validation, price snapshots and rounding, traveler rosters, idempotent Checkout creation, concurrent capacity protection, free bookings, signed replay-safe webhooks, hold expiration, owned reads, refund cancellation, reconciliation, and exactly-once seat restoration.
 - R2 purge dry-run immutability, confirmation and force modes, object verification, media-row cleanup, failure handling, and production refusal.
 
 Use the following commands during verification:
@@ -894,7 +930,7 @@ php artisan scramble:analyze --api=v1
 php artisan scramble:export --api=v1
 ```
 
-## 14. Deferred scope
+## 15. Deferred scope
 
 The following capabilities are intentionally not part of the current public contract and must be specified before implementation:
 
@@ -903,6 +939,4 @@ The following capabilities are intentionally not part of the current public cont
 - Email verification, refresh tokens, token listing, and user-initiated revoke-all workflows.
 - Client-controlled image reordering.
 - Direct or presigned uploads and queued image conversions.
-- Booking and inventory workflows.
-- Requiring a completed purchase and an ended departure before review submission.
-- Discounted-price calculation or promotion rules.
+- Guest checkout, partial booking changes or refunds, taxes, promotion codes, multiple currencies, delayed payment methods, Stripe Connect, customer synchronization, and administrative booking operations.

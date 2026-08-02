@@ -61,6 +61,11 @@ class User extends Authenticatable implements Auditable, MustVerifyEmail
         return $this->hasMany(Review::class);
     }
 
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
+    }
+
     public function hasVerifiedEmail(): bool
     {
         return $this->email_verified_at !== null;

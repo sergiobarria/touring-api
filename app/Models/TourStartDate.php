@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Contracts\Auditable;
 
@@ -26,6 +27,11 @@ class TourStartDate extends Model implements Auditable
         return $this->belongsTo(Tour::class);
     }
 
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
+    }
+
     /**
      * Get the attributes that should be cast.
      *
@@ -36,6 +42,7 @@ class TourStartDate extends Model implements Auditable
         return [
             'start_datetime_utc' => 'immutable_datetime',
             'available_spots' => 'integer',
+            'reserved_spots' => 'integer',
             'is_active' => 'boolean',
         ];
     }

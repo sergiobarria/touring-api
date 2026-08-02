@@ -82,6 +82,11 @@ class Tour extends Model implements Auditable, HasMedia
         return $this->hasMany(Review::class);
     }
 
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
+    }
+
     public function upcomingStartDates(): HasMany
     {
         return $this->hasMany(TourStartDate::class)

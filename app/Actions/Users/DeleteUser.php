@@ -30,6 +30,12 @@ final readonly class DeleteUser
             ]);
         }
 
+        if ($user->bookings()->exists()) {
+            throw ValidationException::withMessages([
+                'user' => 'Users with booking history cannot be deleted.',
+            ]);
+        }
+
         DB::transaction(function () use ($user): void {
             $tourIds = $user->reviews()->select('tour_id')->distinct()->pluck('tour_id')->sort()->values();
 

@@ -43,7 +43,7 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
             'token',
         ]);
 
-        Telescope::hideRequestHeaders(['authorization']);
+        Telescope::hideRequestHeaders(['authorization', 'stripe-signature']);
         Telescope::hideResponseParameters(['meta.access_token']);
 
         if ($this->app->environment('local')) {

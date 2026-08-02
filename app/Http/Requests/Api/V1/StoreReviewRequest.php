@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1;
 
 use App\DataTransferObjects\ReviewData;
+use App\Enums\BookingStatus;
 use App\Http\Requests\Api\V1\Concerns\RejectsUnsupportedFields;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -40,6 +41,14 @@ class StoreReviewRequest extends FormRequest
 
             if ($this->user()?->reviews()->whereBelongsTo($this->route('tour'))->exists()) {
                 $validator->errors()->add('review', 'You have already reviewed this tour.');
+            }
+
+            if (! $this->user()?->bookings()
+                ->whereBelongsTo($this->route('tour'))
+                ->where('status', BookingStatus::CONFIRMED)
+                ->where('departure_datetime_utc', '<', now('UTC'))
+                ->exists()) {
+                $validator->errors()->add('review', 'You can review a tour only after completing a booked departure.');
             }
         }];
     }

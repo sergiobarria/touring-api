@@ -2,6 +2,8 @@
 
 use App\Enums\TourPermission;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BookingController;
+use App\Http\Controllers\Api\V1\StripeWebhookController;
 use App\Http\Controllers\Api\V1\TourAnalyticsController;
 use App\Http\Controllers\Api\V1\TourController;
 use App\Http\Controllers\Api\V1\TourImageController;
@@ -36,6 +38,22 @@ Route::prefix('users')
         Route::get('{user}', 'show')->name('show');
         Route::patch('{user}/role', 'updateRole')->name('role.update');
         Route::delete('{user}', 'destroy')->name('destroy');
+    });
+
+Route::post('stripe/webhook', StripeWebhookController::class)
+    ->withoutMiddleware('throttle:api')
+    ->middleware('throttle:stripe-webhook')
+    ->name('stripe.webhook');
+
+Route::prefix('bookings')
+    ->name('bookings.')
+    ->controller(BookingController::class)
+    ->middleware(['auth:sanctum', 'no-store'])
+    ->group(function (): void {
+        Route::get('/', 'index')->name('index');
+        Route::post('/', 'store')->name('store');
+        Route::get('{booking}', 'show')->name('show');
+        Route::post('{booking}/cancel', 'cancel')->name('cancel');
     });
 
 Route::apiResource('tours', TourController::class)->only(['index', 'show']);

@@ -23,10 +23,10 @@ final readonly class UpdateTour
             $attributes = $request->toDto($tour)->toArray();
 
             if ($request->has('max_group_size') && $tour->startDates()
-                ->where('available_spots', '>', $attributes['max_group_size'])
+                ->whereRaw('available_spots + reserved_spots > ?', [$attributes['max_group_size']])
                 ->exists()) {
                 throw ValidationException::withMessages([
-                    'max_group_size' => 'The maximum group size must not be less than available spots on an existing start date.',
+                    'max_group_size' => 'The maximum group size must not be less than available and reserved spots on an existing start date.',
                 ]);
             }
 

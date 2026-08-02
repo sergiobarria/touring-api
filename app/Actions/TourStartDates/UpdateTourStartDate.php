@@ -8,6 +8,7 @@ use App\Models\TourStartDate;
 use App\Services\Tours\TourStartDateService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 final readonly class UpdateTourStartDate
@@ -25,6 +26,11 @@ final readonly class UpdateTourStartDate
                 $startDate = $tour->startDates()->lockForUpdate()->findOrFail($startDateId);
                 $attributes = $request->toDto($startDate)->toArray();
                 $this->startDates->ensureCapacity($tour, $attributes['available_spots']);
+                if ($tour->max_group_size < $attributes['available_spots'] + $startDate->reserved_spots) {
+                    throw ValidationException::withMessages([
+                        'available_spots' => 'Available and reserved spots must not exceed the tour maximum group size.',
+                    ]);
+                }
                 $startDate->update($attributes);
 
                 return $startDate->refresh();

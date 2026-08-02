@@ -1,8 +1,10 @@
 <?php
 
 use App\Enums\UserRole;
+use App\Models\Booking;
 use App\Models\Review;
 use App\Models\Tour;
+use App\Models\TourStartDate;
 use App\Models\User;
 use App\Services\Tours\TourRatingService;
 use Database\Seeders\PermissionSeeder;
@@ -13,6 +15,18 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 
 uses(RefreshDatabase::class);
+
+function giveCompletedBooking(User $user, Tour $tour): void
+{
+    $departure = TourStartDate::factory()->for($tour)->create([
+        'start_datetime_utc' => now('UTC')->subDays($tour->startDates()->count() + 1),
+    ]);
+    Booking::factory()->for($user)->create([
+        'tour_id' => $tour->id,
+        'tour_start_date_id' => $departure->id,
+        'departure_datetime_utc' => $departure->start_datetime_utc,
+    ]);
+}
 
 it('registers public reads and authenticated review writes without put', function () {
     foreach (['index', 'store', 'show', 'update', 'destroy'] as $action) {
@@ -36,6 +50,7 @@ it('registers public reads and authenticated review writes without put', functio
 it('creates one review per user for active or inactive tours and updates aggregates', function (bool $active) {
     $user = User::factory()->create();
     $tour = Tour::factory()->create(['is_active' => $active]);
+    giveCompletedBooking($user, $tour);
     $this->actingAs($user);
 
     $response = $this->postJson("/api/v1/tours/{$tour->id}/reviews", [
@@ -62,6 +77,7 @@ it('creates one review per user for active or inactive tours and updates aggrega
 it('validates review writes and rejects unsupported or empty payloads', function () {
     $user = User::factory()->create();
     $tour = Tour::factory()->create();
+    giveCompletedBooking($user, $tour);
     $this->actingAs($user);
 
     $url = "/api/v1/tours/{$tour->id}/reviews";
@@ -95,6 +111,7 @@ it('allows only the owner to update and delete a nested review', function () {
     $tour = Tour::factory()->create();
     $otherTour = Tour::factory()->create();
     $review = Review::factory()->for($tour)->for($owner)->create(['rating' => 2]);
+    giveCompletedBooking($owner, $tour);
     app(TourRatingService::class)->recompute($tour);
 
     $this->actingAs($other);
@@ -119,6 +136,8 @@ it('recomputes exact aggregates after create update text-only update and delete'
     $tour = Tour::factory()->create();
     $first = User::factory()->create();
     $second = User::factory()->create();
+    giveCompletedBooking($first, $tour);
+    giveCompletedBooking($second, $tour);
 
     $this->actingAs($first)->postJson("/api/v1/tours/{$tour->id}/reviews", [
         'rating' => 4, 'review' => 'First.',

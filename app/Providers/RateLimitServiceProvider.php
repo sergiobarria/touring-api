@@ -25,6 +25,8 @@ final class RateLimitServiceProvider extends ServiceProvider
 
     private const int REGISTRATION_REQUESTS_PER_MINUTE = 5;
 
+    private const int STRIPE_WEBHOOK_REQUESTS_PER_MINUTE = 300;
+
     public function boot(): void
     {
         RateLimiter::for('api', function (Request $request): Limit {
@@ -73,6 +75,12 @@ final class RateLimitServiceProvider extends ServiceProvider
             'account-update',
             fn (Request $request): Limit => Limit::perMinute(self::ACCOUNT_UPDATE_REQUESTS_PER_MINUTE)
                 ->by((string) $request->user()?->getAuthIdentifier()),
+        );
+
+        RateLimiter::for(
+            'stripe-webhook',
+            fn (Request $request): Limit => Limit::perMinute(self::STRIPE_WEBHOOK_REQUESTS_PER_MINUTE)
+                ->by($request->ip()),
         );
     }
 }
