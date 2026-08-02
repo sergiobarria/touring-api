@@ -56,6 +56,11 @@ class User extends Authenticatable implements Auditable, MustVerifyEmail
         return $this->belongsToMany(Tour::class, 'guide_tour');
     }
 
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class);
+    }
+
     public function hasVerifiedEmail(): bool
     {
         return $this->email_verified_at !== null;

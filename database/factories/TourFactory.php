@@ -25,7 +25,6 @@ class TourFactory extends Factory
     public function definition(): array
     {
         $name = fake()->unique()->bothify('Tour ???-###');
-        $hasRatings = fake()->boolean(80);
 
         return [
             'name' => $name,
@@ -38,12 +37,8 @@ class TourFactory extends Factory
             'price_discount_percent' => fake()
                 ->optional(0.3)
                 ->randomElement([5, 10, 15, 20, 25]),
-            'rating_avg' => $hasRatings
-                ? fake()->randomFloat(2, 3.5, 5)
-                : null,
-            'rating_count' => $hasRatings
-                ? fake()->numberBetween(1, 247)
-                : 0,
+            'rating_avg' => null,
+            'rating_count' => 0,
             'summary' => fake()->sentence(12),
             'description' => fake()->optional(0.9)->paragraph(3, true),
         ];

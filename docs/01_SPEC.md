@@ -6,13 +6,13 @@ Touring API is a versioned REST API for publishing and discovering guided tours.
 
 Every feature change must update this specification in the same implementation pass so that it remains the source of truth for the application's requirements and public contract.
 
-The current implementation provides Sanctum API-token authentication, email verification, password management, permission-protected tour administration, tour-level guide teams, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, and admin-only tour analytics. Restoration, booking, and reviews are outside the current scope.
+The current implementation provides Sanctum API-token authentication, email verification, password management, permission-protected tour administration, tour-level guide teams, a public tour catalog, CRUD operations for tours and their start dates, ordered tour image galleries, authenticated owner-managed tour reviews, and admin-only tour analytics. Restoration and booking are outside the current scope.
 
 ## 2. Technical conventions
 
 - The application is built with Laravel 13 and PHP 8.3 or newer.
 - PostgreSQL is the primary development and production database. Automated tests use in-memory SQLite for isolation and speed.
-- Application-owned model primary keys are ULIDs, including users, tours, tour start dates, and health-check history. Foreign and polymorphic references to these models use the same ULID type.
+- Application-owned model primary keys are ULIDs, including users, tours, tour start dates, reviews, and health-check history. Foreign and polymorphic references to these models use the same ULID type.
 - Framework and third-party infrastructure tables may retain package-compatible identifiers when replacing them would add coupling without improving the public contract. This applies to queue internals, Telescope, audit row IDs, Sanctum token row IDs, Spatie media rows, and Spatie role and permission rows. Polymorphic references from package tables to application models retain the application's ULID type. Tour images expose Spatie's integer media identifier for owned image operations; no other database sequence IDs are public.
 - API routes are versioned. Version 1 is mounted below `/api/v1` and uses the `v1.` route-name prefix.
 - Responses use Laravel JSON:API resources.
@@ -27,7 +27,7 @@ The current implementation provides Sanctum API-token authentication, email veri
 - Authentication is the first feature implemented with this pattern: register, login, and logout delegate to dedicated actions, and token issuance and current-token revocation share an access-token service.
 - Required workflows use explicit orchestration: actions and services call their required collaborators directly. Events and listeners are not used for required state changes, authorization, request correctness, or hidden sequencing. Asynchronous jobs and notifications are dispatched explicitly after surrounding database transactions commit. Events are reserved for optional fan-out, observability, or narrowly documented framework lifecycle compatibility, and application correctness must remain independent of listeners.
 - Tour and tour start-date deletion workflows use soft deletes. Individual media records are hard-deleted only through the explicit owned-image endpoint after their stored files and conversions are removed.
-- Authentication uses Laravel Sanctum personal access tokens supplied through the Bearer authorization scheme. Catalog and start-date reads are public; every tour mutation and analytics endpoint requires its admin-only permission.
+- Authentication uses Laravel Sanctum personal access tokens supplied through the Bearer authorization scheme. Catalog, start-date, and review reads are public. Review writes require authentication and ownership; administrative tour mutations and analytics require admin-only permissions.
 
 ### 2.1 Operational health
 
@@ -81,7 +81,7 @@ The model exposes a computed `duration_weeks` attribute. It is calculated as `du
 
 The model also exposes `upcoming_dates`, an ordered array of ISO 8601 UTC strings derived from its start dates. It contains every non-deleted, active start date strictly later than the current UTC time. Sold-out dates remain present because this attribute describes the schedule rather than booking availability. Tours without qualifying dates return an empty array.
 
-Rating values must be coherent: a tour without ratings has `rating_avg = null` and `rating_count = 0`; a rated tour has a non-null average and a positive count.
+Ratings are authoritative aggregates of review rows. A tour without reviews has `rating_avg = null` and `rating_count = 0`; a reviewed tour stores the review count and average integer rating rounded to two decimal places. Review mutations lock the tour and recompute both values in the same transaction.
 
 Tour names do not need to be unique. Slugs are generated and updated from names, with numeric suffixes added when necessary. Slugs belonging to soft-deleted tours remain reserved.
 
@@ -132,13 +132,30 @@ The ordered `images` attribute appears on every tour representation. Tours witho
 
 Soft-deleting a tour preserves its media and R2 objects. Individual image deletion removes the original and every conversion. Storage deletion failures propagate so the database transaction can retain the media row rather than silently orphaning storage objects.
 
-### 3.4 User and API token
+### 3.4 Tour review
+
+A review belongs to exactly one tour and one user. A user may review a given tour at most once; the database enforces this with a unique `(tour_id, user_id)` constraint.
+
+| Field | Type | Rules and meaning |
+| --- | --- | --- |
+| `id` | ULID | Primary key. |
+| `tour_id` | ULID | Foreign key to the reviewed tour. |
+| `user_id` | ULID | Foreign key to the author. |
+| `rating` | unsigned integer | Required integer from 1 through 5. |
+| `review` | text | Required non-whitespace text, maximum 2,000 characters. |
+| `created_at`, `updated_at` | timestamps | Public lifecycle timestamps. |
+
+Reviews are hard-deleted so an author may submit another later. Soft-deleting a tour preserves its reviews but makes its nested review endpoints unreachable. Permanently deleting a user removes that user's reviews and atomically recomputes each affected tour aggregate.
+
+Purchase and completion checks are deferred until bookings exist. For now, any authenticated user may review any active or inactive, non-deleted tour.
+
+### 3.5 User and API token
 
 A user has a ULID primary key, name, unique lowercase email address, hashed password, nullable verification timestamp, and timestamps. Authentication responses expose only the user's ULID, name, and email address.
 
 Users can have multiple Sanctum personal access tokens, one for each registration or login. Every token uses the internal name `auth-token` and stores a hash of the secret, wildcard abilities, its owning user ULID, and a 30-day expiration timestamp. The plaintext token is returned only when it is created. Logging out deletes only the token used for that request, leaving other tokens valid.
 
-### 3.5 Roles and permissions
+### 3.6 Roles and permissions
 
 Authorization uses Spatie Laravel Permission. Every user has exactly one primary role: `user`, `guide`, `lead-guide`, or `admin`. Public registration always assigns `user`; clients cannot request a role. Changing a role replaces the current role through the shared user-role service, and the database enforces at most one role row per model. The role seeder backfills existing users without a role as `user`.
 
@@ -148,7 +165,7 @@ Application authorization checks capabilities rather than role names. User-manag
 
 The first administrator is bootstrapped from an existing account with `php artisan users:promote-admin <user-ulid-or-email>`. Promotion replaces the existing role and does not create an account.
 
-### 3.6 Password management and transactional email
+### 3.7 Password management and transactional email
 
 Password reset uses Laravel's database-backed password broker. Reset links hand off to `${FRONTEND_URL}/reset-password` with the one-time token and normalized email in the query string. Reset requests always return the same accepted response whether the account exists or not. A successful reset changes the password, rotates the remember token, and revokes every Sanctum token. Authenticated password changes require the current password and preserve only the Bearer token used for the request.
 
@@ -158,21 +175,21 @@ Forgot-password and reset submissions each have an independent limit of five req
 
 Production email uses Laravel's Resend transport and requires `MAIL_MAILER=resend`, `RESEND_API_KEY`, a verified-domain `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`, canonical `APP_URL`, and `FRONTEND_URL`. Local development may retain `MAIL_MAILER=log`.
 
-### 3.7 Email verification
+### 3.8 Email verification
 
 Newly registered users start unverified and receive an encrypted queued verification notification after the registration transaction commits. The email links to `${FRONTEND_URL}/verify-email` with a temporary signed API URL in the `verification_url` query parameter. The signature expires after `EMAIL_VERIFICATION_EXPIRE` minutes, which defaults to 60. `APP_URL` must match the public API origin because it is part of the signature.
 
 Following a valid signed API URL marks the matching email as verified and is idempotent. Both the URL signature and the SHA-1 email fingerprint must match; changed email addresses therefore invalidate older links. Verification mutates state explicitly through an action and does not dispatch Laravel's `Verified` event. An authenticated unverified user may request another notification; verified users receive the same `204 No Content` response without another email. Notification queue failures are reported but do not change registration or resend responses.
 
-### 3.8 Administrative user management
+### 3.9 Administrative user management
 
 Authenticated administrators can list and inspect users, create an account with any canonical role, replace another user's role, and delete another user. Every operation is authorized by its corresponding `users.*` permission rather than by checking the `admin` role name. Non-admin roles receive `403 Forbidden` before validation or target lookup, preventing validation and ULID-enumeration leaks.
 
 Administrative creation requires `name`, normalized `email`, `password`, `password_confirmation`, and one of `user`, `guide`, `lead-guide`, or `admin`. It creates the user and sole role atomically, returns the managed user without an API token, and queues the standard verification email after commit. The initial password must be delivered to the user through a secure channel; invitation-specific password setup remains deferred.
 
-Role replacement and deletion are forbidden for the currently authenticated administrator's own account. Assigned lead/supporting guides must be replaced or removed from every tour before an incompatible role change or user deletion. Deletion is permanent and atomically removes the user's Sanctum tokens, password-reset token, sessions, and role assignment before deleting the account.
+Role replacement and deletion are forbidden for the currently authenticated administrator's own account. Assigned lead/supporting guides must be replaced or removed from every tour before an incompatible role change or user deletion. Deletion is permanent and atomically removes the user's reviews, recomputes affected tour ratings, removes authentication state and the role assignment, then deletes the account.
 
-### 3.9 Self-service profiles
+### 3.10 Self-service profiles
 
 Account identity remains on the `users` table because the current editable fields are only `name` and `email`; a separate one-to-one profile record would add lifecycle and consistency overhead without storing distinct profile-domain data. A profile table should be introduced later only when fields such as biography, avatar preferences, locale, or guide-specific public information establish a meaningful independent profile boundary.
 
@@ -184,13 +201,14 @@ Every authenticated role can update its own name or email. Name changes do not r
 
 - Tours use type `tours`.
 - Tour start dates use type `tour_start_dates`.
+- Tour reviews use type `reviews`.
 - Standalone tour image responses use type `tour_images`.
 - Users use type `users`.
-- User, tour, and start-date resources contain their ULID as `id`; tour image resources contain their integer media identifier as `id`. Every resource also contains its `type`.
+- User, tour, start-date, and review resources contain their ULID as `id`; tour image resources contain their integer media identifier as `id`. Every resource also contains its `type`.
 
 Internal visibility flags and timestamps are not returned as tour attributes. A start date's `is_active` value is currently part of its public resource representation.
 
-Tour and start-date write requests use a plain top-level JSON object. Image uploads use `multipart/form-data`. Responses retain the JSON:API resource representation.
+Tour, start-date, and review write requests use a plain top-level JSON object. Image uploads use `multipart/form-data`. Responses retain the JSON:API resource representation.
 
 ### 4.2 Sparse fieldsets
 
@@ -583,11 +601,55 @@ Soft-deletes the departure and returns `204 No Content`. It disappears from star
 
 The server derives `tour_id` from the nested URL and manages identifiers and timestamps. These fields and all unknown fields are rejected with `422 Unprocessable Entity`. Concurrent duplicate creation or update is also translated from the database uniqueness constraint into a validation error.
 
-## 7. Tour analytics endpoints
+## 7. Tour review endpoints
+
+Review reads are public. Write operations require Sanctum authentication. Reviews may be created for active or inactive tours, but a soft-deleted or unknown parent returns `404 Not Found`. Reviews are exposed only through these paginated nested endpoints and are not an allowed tour `include`.
+
+### 7.1 List a tour's reviews
+
+```http
+GET /api/v1/tours/{tour}/reviews
+```
+
+Returns non-deleted reviews ordered by `created_at` descending and ULID descending. Pagination accepts `page` and `per_page`, defaulting to 1 and 15 with a maximum page size of 100. Each JSON:API `reviews` resource exposes `rating`, `review`, `created_at`, `updated_at`, and `author` as `{id, name}`.
+
+### 7.2 Retrieve a review
+
+```http
+GET /api/v1/tours/{tour}/reviews/{review}
+```
+
+Returns the review only when it belongs to the parent tour. Mismatched or unknown identifiers return `404 Not Found`.
+
+### 7.3 Create a review
+
+```http
+POST /api/v1/tours/{tour}/reviews
+```
+
+Requires an integer `rating` from 1 through 5 and a non-whitespace `review` string of at most 2,000 characters. The author is always the authenticated user. A successful request returns `201 Created`, the review resource, and a `Location` header. A second review by the same user for the same tour returns `422 Unprocessable Entity`; the database unique constraint also protects concurrent submissions.
+
+### 7.4 Partially update a review
+
+```http
+PATCH /api/v1/tours/{tour}/reviews/{review}
+```
+
+The owner may update `rating`, `review`, or both. At least one field is required, unknown fields are rejected, and PUT is not supported. Non-owners receive `403 Forbidden`, including administrators.
+
+### 7.5 Delete a review
+
+```http
+DELETE /api/v1/tours/{tour}/reviews/{review}
+```
+
+The owner may hard-delete the review and receives `204 No Content`. The user can subsequently submit a replacement review. Create, update, and delete recompute the tour's rating count and average atomically.
+
+## 8. Tour analytics endpoints
 
 Tour analytics are admin-only, read-only views of the active catalog protected by `tours.view-analytics`. All analytics exclude inactive and soft-deleted tours. Monthly analytics additionally exclude inactive and soft-deleted start dates. These endpoints have fixed behavior and do not expose pagination, filtering, custom sorting, includes, or sparse fieldsets.
 
-### 7.1 List top tours
+### 8.1 List top tours
 
 ```http
 GET /api/v1/tour-analytics/top-tours
@@ -595,7 +657,7 @@ GET /api/v1/tour-analytics/top-tours
 
 Returns at most five JSON:API `tours` resources. Rated tours are ordered by `rating_avg` descending, then `price` ascending, and finally ULID ascending. Tours without a rating are ordered after all rated tours. Each resource exposes only `name`, `price`, `rating_avg`, `summary`, `difficulty`, and `images`; request query parameters cannot alter this fieldset or ordering.
 
-### 7.2 Get tour statistics
+### 8.2 Get tour statistics
 
 ```http
 GET /api/v1/tour-analytics/stats
@@ -623,7 +685,7 @@ Includes tours with `rating_avg >= 4.5`, groups them by difficulty, and orders g
 
 When no tours qualify, `stats` is an empty array.
 
-### 7.3 Get a monthly tour plan
+### 8.3 Get a monthly tour plan
 
 ```http
 GET /api/v1/tour-analytics/monthly-plan/{year}
@@ -649,7 +711,7 @@ The endpoint includes active departures from the inclusive start through the inc
 
 When no departures qualify, `plan` is an empty array.
 
-## 8. Errors and validation
+## 9. Errors and validation
 
 - Successful registration and login return `201 Created` and `200 OK`, respectively, with the user resource and one-time plaintext token metadata.
 - Successful logout returns `204 No Content` and revokes only the current token.
@@ -663,6 +725,7 @@ When no departures qualify, `plan` is an empty array.
 - Successful partial updates return `200 OK` with the updated detail resource.
 - A successful tour deletion returns `204 No Content` with an empty body.
 - Successful start-date creation, update, and deletion return `201 Created`, `200 OK`, and `204 No Content`, respectively.
+- Successful review creation, update, and deletion return `201 Created`, `200 OK`, and `204 No Content`, respectively.
 - Successful image upload and deletion return `201 Created` and `204 No Content`, respectively.
 - Invalid list or write input, unknown write fields, and empty PATCH requests return `422 Unprocessable Entity` with Laravel validation errors.
 - Unsupported filters, sorts, or includes return `400 Bad Request`.
@@ -674,9 +737,11 @@ When no departures qualify, `plan` is an empty array.
 - Missing or soft-deleted tour parents, mismatched image ownership, and unknown images return `404 Not Found` for image writes.
 - Empty image uploads, unsupported image types, files over 10 MB, cumulative galleries over ten images, and unknown upload fields return `422 Unprocessable Entity`.
 - PUT is not registered for start dates and returns `405 Method Not Allowed`.
+- Duplicate reviews, invalid ratings, blank or overlong review text, unknown review fields, and empty review PATCH requests return `422 Unprocessable Entity`.
+- Review writes require authentication; non-owner review updates and deletes return `403 Forbidden`. Mismatched nested reviews and soft-deleted parents return `404 Not Found`. PUT is not registered for reviews.
 - Invalid monthly-plan years return `422 Unprocessable Entity`.
 
-## 9. Routing and documentation
+## 10. Routing and documentation
 
 `routes/api.php` is the API version dispatcher. Version 1 routes are defined in `routes/api_v1.php` and mounted with the `v1` URL and route-name prefixes.
 
@@ -693,6 +758,8 @@ These routes are public and receive the global guest/IP rate limit:
 | `GET` | `/api/v1/tours/{tour}` | Retrieve one active tour by ULID. |
 | `GET` | `/api/v1/tours/{tour}/start-dates` | List all non-deleted start dates for a tour. |
 | `GET` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | Retrieve an owned start date. |
+| `GET` | `/api/v1/tours/{tour}/reviews` | List reviews newest-first. |
+| `GET` | `/api/v1/tours/{tour}/reviews/{review}` | Retrieve an owned review. |
 
 The authenticated routes are:
 
@@ -715,6 +782,8 @@ The authenticated routes are:
 | `DELETE` | `/api/v1/tours/{tour}/images/{image}` | `auth:sanctum`, `tours.manage-images` | Delete an owned tour image. |
 | `POST` | `/api/v1/tours/{tour}/start-dates` | `auth:sanctum`, `tours.manage-start-dates` | Create a departure. |
 | `PATCH`, `DELETE` | `/api/v1/tours/{tour}/start-dates/{tourStartDate}` | `auth:sanctum`, `tours.manage-start-dates` | Update or delete a departure. |
+| `POST` | `/api/v1/tours/{tour}/reviews` | `auth:sanctum` | Create the current user's review. |
+| `PATCH`, `DELETE` | `/api/v1/tours/{tour}/reviews/{review}` | `auth:sanctum`, ownership policy | Update or delete the current user's review. |
 | `GET` | `/api/v1/tour-analytics/*` | `auth:sanctum`, `tours.view-analytics` | View tour analytics. |
 
 Scramble exposes version-specific OpenAPI documentation:
@@ -722,16 +791,16 @@ Scramble exposes version-specific OpenAPI documentation:
 - Interactive documentation: `/docs/v1`
 - OpenAPI document: `/docs/v1.json`
 - Documented server base path: `/api/v1`
-- Authentication operations are grouped under `Authentication`, tour operations under `Tours`, image operations under `Tour Images`, start-date operations under `Tour Start Dates`, and analytics under `Tour Analytics`.
+- Authentication operations are grouped under `Authentication`, tour operations under `Tours`, image operations under `Tour Images`, start-date operations under `Tour Start Dates`, review operations under `Tour Reviews`, and analytics under `Tour Analytics`.
 - Scramble documents Sanctum-protected operations with the Bearer security scheme and explicitly marks unprotected operations as public.
 
 The default Scramble `/docs/api` and `/docs/api.json` routes are disabled so documentation cannot mix API versions.
 
-## 10. Development data
+## 11. Development data
 
-`DatabaseSeeder` always runs `PermissionSeeder` followed by `RoleSeeder`. In the local environment it then creates ten lead guides and twenty-five supporting guides before loading tour fixtures. Automated feature tests seed canonical authorization data when protected behavior is exercised.
+`DatabaseSeeder` always runs `PermissionSeeder` followed by `RoleSeeder`. In the local environment it then creates ten lead guides, twenty-five supporting guides, and twenty-five regular users before loading tour and review fixtures. Automated feature tests seed canonical authorization data when protected behavior is exercised.
 
-The development seeder creates 20 tours, each with one lead guide, zero through four unique supporting guides, between three and five start dates, and one or two randomly selected images. It runs only in the `local` environment.
+The development seeder creates 20 tours, each with one lead guide, zero through four unique supporting guides, between three and five start dates, and one or two randomly selected images. It then assigns each tour between three and ten reviews from distinct regular users and derives the tour rating aggregates from those rows. These fixtures run only in the `local` environment.
 
 Tour factory data follows these rules:
 
@@ -741,12 +810,12 @@ Tour factory data follows these rules:
 - Difficulty is selected from the `TourDifficulty` enum.
 - Base price ranges from 299.00 to 2999.00.
 - A discount is generated about 30% of the time and uses a realistic increment: 5%, 10%, 15%, 20%, or 25%.
-- A tour has ratings about 80% of the time. Rated tours receive an average from 3.50 to 5.00 and a positive rating count; unrated tours receive a null average and zero count.
+- Tour factories always start with a null average and zero rating count; only persisted review rows populate these aggregates.
 - The opt-in `withImages(minimum: 1, maximum: 2)` factory state copies randomly selected JPEG, PNG, or WebP fixtures from `data/assets` into the configured media disk. Source fixtures remain unchanged, and invalid ranges or a missing fixture set fail explicitly.
 
 Generated start dates occur from 1 to 180 days in the future, use UTC, add a randomized daytime hour and either zero or 30 minutes, and are active about 90% of the time.
 
-## 11. R2 media configuration and cleanup
+## 12. R2 media configuration and cleanup
 
 Spatie Media Library stores originals and conversions on the `r2` disk. Configure these variables locally; credentials must never be committed:
 
@@ -778,7 +847,7 @@ php artisan r2:purge-media --execute --force
 
 Execution deletes every object, verifies the bucket is empty, and only then deletes media rows whose original or conversions disk is `r2`. If inspection, deletion, or verification fails, the command exits unsuccessfully and retains the database rows. It refuses staging and production even when `--force` is supplied.
 
-## 12. Acceptance and verification
+## 13. Acceptance and verification
 
 Feature coverage must verify:
 
@@ -813,6 +882,7 @@ Feature coverage must verify:
 - Single and multi-file uploads, synchronous conversions, public URLs, cumulative limits, MIME and size validation, and atomic failure cleanup.
 - Owned image deletion, file and conversion removal, normalized positions, storage-failure rollback, and preservation after tour soft deletion.
 - Factory and seeder fixture handling without moving source assets.
+- Public review reads, authenticated writes, ownership authorization, nested ownership, one-review uniqueness, validation, deterministic pagination, aggregate recomputation, account-deletion cleanup, and coherent review seed fixtures.
 - R2 purge dry-run immutability, confirmation and force modes, object verification, media-row cleanup, failure handling, and production refusal.
 
 Use the following commands during verification:
@@ -824,7 +894,7 @@ php artisan scramble:analyze --api=v1
 php artisan scramble:export --api=v1
 ```
 
-## 13. Deferred scope
+## 14. Deferred scope
 
 The following capabilities are intentionally not part of the current public contract and must be specified before implementation:
 
@@ -833,6 +903,6 @@ The following capabilities are intentionally not part of the current public cont
 - Email verification, refresh tokens, token listing, and user-initiated revoke-all workflows.
 - Client-controlled image reordering.
 - Direct or presigned uploads and queued image conversions.
-- Reviews and rating submission.
 - Booking and inventory workflows.
+- Requiring a completed purchase and an ended departure before review submission.
 - Discounted-price calculation or promotion rules.

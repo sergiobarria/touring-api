@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\TourAnalyticsController;
 use App\Http\Controllers\Api\V1\TourController;
 use App\Http\Controllers\Api\V1\TourImageController;
+use App\Http\Controllers\Api\V1\TourReviewController;
 use App\Http\Controllers\Api\V1\TourStartDateController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -79,4 +80,17 @@ Route::prefix('tours/{tour}/start-dates')
                 Route::patch('{tourStartDate}', 'update')->name('update');
                 Route::delete('{tourStartDate}', 'destroy')->name('destroy');
             });
+    });
+
+Route::prefix('tours/{tour}/reviews')
+    ->name('tours.reviews.')
+    ->controller(TourReviewController::class)
+    ->group(function (): void {
+        Route::get('/', 'index')->name('index');
+        Route::get('{review}', 'show')->name('show');
+        Route::middleware('auth:sanctum')->group(function (): void {
+            Route::post('/', 'store')->name('store');
+            Route::patch('{review}', 'update')->name('update');
+            Route::delete('{review}', 'destroy')->name('destroy');
+        });
     });
